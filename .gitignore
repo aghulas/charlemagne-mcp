@@ -1,0 +1,11 @@
+venv/
+venv32/
+__pycache__/
+*.pyc
+
+# Donnees sensibles (eleves mineurs, familles) - jamais commit
+data/
+*.db
+*.csv
+logs/
+.pytest_cache/

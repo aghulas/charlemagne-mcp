@@ -1,0 +1,7 @@
+pandas
+mcp[cli]
+pytest
+
+# Exploration ODBC/HFSQL abandonnee (voir CLAUDE.md) - conservee tant que
+# test_connection.py / scripts/inspect_schema.py n'ont pas ete supprimes
+pypyodbc
