@@ -40,6 +40,17 @@ Conséquence concrète : **passer en HTTP distant est un changement de quelques 
 dans `mcp_server.py` (transport + un `TokenVerifier` qui valide un vrai jeton Entra ID au
 lieu du stub de test), pas une réécriture.
 
+**Mise à jour (16 sept. 2026) : fait.** `mcp_server.py` supporte désormais
+`--transport {stdio,streamable-http}`, et la vérification de jeton Entra ID ne vit plus
+dans ce dépôt : elle a été extraite dans un module partagé,
+[`mcp-entra-auth`](https://github.com/aghulas/mcp-entra-auth) (dépôt privé, même compte
+GitHub), réutilisé à l'identique par `ecoledirecte-admin-mcp` et
+`edumoov-mcp-prototype` — un seul endroit à corriger/auditer pour les 3 projets, plutôt
+que 3 copies divergentes du même code de sécurité. Chaque serveur garde son propre scope
+Entra ID (`Charlemagne.Read` ici), ce qui garantit qu'un jeton valide pour un projet
+n'est jamais accepté par un autre, même en partageant le module (voir les tests
+`test_deux_serveurs_scopes_differents_sont_etanches` du dépôt partagé).
+
 ## Architecture recommandée avec le tenant Microsoft de l'école
 
 Deux façons de faire, toutes deux officiellement documentées par Microsoft :
@@ -76,9 +87,13 @@ ce groupe dans le `TokenVerifier`, en plus de la validation du jeton — pas seu
 
 - Hébergement : Azure App Service ou Container Apps, HTTPS géré automatiquement par
   Azure (pas de certificat à gérer).
-- `TokenVerifier` réel (à écrire, remplace le stub du POC) : valide la signature du jeton
-  via le JWKS du tenant, vérifie `aud` = Application ID URI, vérifie l'expiration,
-  optionnellement vérifie le claim `groups`.
+- `TokenVerifier` réel : fourni par le module partagé `mcp-entra-auth`
+  (`entra_auth_kwargs(required_scope="Charlemagne.Read")` dans `mcp_server.py`) — valide
+  la signature du jeton via le JWKS du tenant, vérifie `aud` = Application ID URI,
+  l'issuer, l'expiration, et optionnellement le claim `groups`. Variables d'environnement
+  à définir sur l'hébergement Azure (transport `streamable-http` uniquement) :
+  `MCP_ENTRA_TENANT_ID`, `MCP_ENTRA_APP_ID_URI` (obligatoires), `MCP_ENTRA_ALLOWED_GROUP_ID`,
+  `MCP_ENTRA_PUBLIC_URL` (optionnelles). Détail complet dans le README du dépôt partagé.
 - Périmètre exposé : ne pas dupliquer tous les tools stdio tels quels. Recommandé de
   commencer volontairement restreint (ex. `liste_eleves` seul, en fonction des cas d'usage
   réels prévus pour les agents Copilot Studio du personnel), et d'élargir ensuite plutôt
@@ -106,7 +121,8 @@ utilisée par le serveur distant — sans jamais transiter par le Mac.
 
 ## Prochaine étape technique
 
-Porter le transport HTTP validé dans le vrai `mcp_server.py` (en gardant le stdio intact
-pour Claude Desktop — un `--transport` en argument, comme dans le POC), avec un
-`TokenVerifier` réel Entra ID. Ça peut se faire et se tester (jeton de test obtenu depuis
-le tenant) avant même que l'hébergement Azure définitif soit choisi.
+Le transport HTTP + `TokenVerifier` Entra ID sont portés et testés côté code (stdio
+intact pour Claude Desktop, `--transport streamable-http` pour Copilot 365). Reste à
+faire côté [prénom] dans le portail Entra ID (inscriptions d'application, groupe de sécurité,
+consentement admin) avant de pouvoir tester en bout en bout avec un vrai tenant, puis
+choisir et provisionner l'hébergement Azure (App Service ou Container Apps).

@@ -8,8 +8,11 @@ Usage :
   python3 mcp_server.py                                   # stdio (defaut, Claude Desktop)
   python3 mcp_server.py --transport streamable-http --port 8000
       # HTTP distant avec authentification Entra ID (voir docs/plan-multiplatform.md
-      # pour les variables d'environnement requises : CHARLEMAGNE_ENTRA_TENANT_ID,
-      # CHARLEMAGNE_ENTRA_APP_ID_URI, CHARLEMAGNE_ENTRA_ALLOWED_GROUP_ID)
+      # pour les variables d'environnement requises : MCP_ENTRA_TENANT_ID,
+      # MCP_ENTRA_APP_ID_URI, MCP_ENTRA_ALLOWED_GROUP_ID)
+      # L'authentification elle-meme vient du module partage mcp-entra-auth
+      # (github.com/aghulas/mcp-entra-auth), reutilise par ecoledirecte-admin-mcp
+      # et edumoov-mcp-prototype - un seul endroit a corriger si besoin.
 """
 
 import argparse
@@ -25,6 +28,10 @@ INSTRUCTIONS = (
     "Les donnees ne sont pas temps reel : elles datent du dernier export charge."
 )
 
+# Scope Entra ID propre a ce serveur - jamais partage avec ecoledirecte-admin-mcp /
+# ecoledirecte-perso-mcp / edumoov-mcp, meme s'ils utilisent tous mcp-entra-auth.
+REQUIRED_SCOPE = "Charlemagne.Read"
+
 
 def build_server(transport: str) -> MCPServer:
     """Construit le serveur MCP. En streamable-http, active la verification de
@@ -33,29 +40,12 @@ def build_server(transport: str) -> MCPServer:
     if transport == "stdio":
         return MCPServer(name="charlemagne", instructions=INSTRUCTIONS)
 
-    import os
+    from mcp_entra_auth import entra_auth_kwargs
 
-    from mcp.server.auth.settings import AuthSettings
-    from pydantic import AnyHttpUrl
-
-    from auth.entra_verifier import EntraTokenVerifier
-
-    verifier = EntraTokenVerifier()
-    # URL publique HTTPS du serveur lui-meme (pas l'Application ID URI Entra,
-    # qui sert uniquement de "aud" verifie dans le jeton). En production :
-    # https://<nom-app>.azurewebsites.net/mcp (ou equivalent Container Apps).
-    public_url = os.environ.get("CHARLEMAGNE_MCP_PUBLIC_URL", "http://127.0.0.1:8000/mcp")
     return MCPServer(
         name="charlemagne",
         instructions=INSTRUCTIONS,
-        token_verifier=verifier,
-        auth=AuthSettings(
-            issuer_url=AnyHttpUrl(verifier.issuer),
-            resource_server_url=AnyHttpUrl(public_url),
-            # False : c'est EntraTokenVerifier.verify_token qui verifie deja l'audience
-            # (aud = Application ID URI) a l'interieur du JWT lui-meme.
-            validate_token_resource=False,
-        ),
+        **entra_auth_kwargs(required_scope=REQUIRED_SCOPE),
     )
 
 
