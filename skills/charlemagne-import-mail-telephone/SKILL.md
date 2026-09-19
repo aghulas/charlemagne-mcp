@@ -1,6 +1,6 @@
 ---
 name: charlemagne-import-mail-telephone
-description: "Use when preparing the Charlemagne 'ImportMailTelephone' Excel file to bulk-update email/phone for students or staff (l'établissement), imported natively from within Charlemagne."
+description: "Use when preparing the Charlemagne 'ImportMailTelephone' Excel file to bulk-update email/phone for students or staff, imported natively from within Charlemagne."
 ---
 
 # Import Charlemagne — email / téléphone (élèves et adultes)

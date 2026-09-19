@@ -23,7 +23,7 @@ from db.connection import get_connection
 from tools import eleves, facturation, personnels
 
 INSTRUCTIONS = (
-    "Acces en lecture seule aux donnees de gestion Charlemagne (l'établissement), "
+    "Acces en lecture seule aux donnees de gestion Charlemagne, "
     "a partir d'une base SQLite consolidee depuis les exports natifs Charlemagne. "
     "Les donnees ne sont pas temps reel : elles datent du dernier export charge."
 )

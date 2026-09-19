@@ -102,7 +102,7 @@ ce groupe dans le `TokenVerifier`, en plus de la validation du jeton — pas seu
 
 ### Côté données
 
-Le serveur Azure a besoin d'une base à jour, en continu, sans dépendre du Mac de [prénom].
+Le serveur Azure a besoin d'une base à jour, en continu, sans dépendre du Mac de l'administrateur.
 Ça rejoint le test déjà prévu par ailleurs : export CSV planifié vers un SharePoint
 accessible sans connexion à l'instance cloud. Ce même export peut alimenter un job
 planifié côté Azure (Function App en timer trigger, par ex.) qui relit les CSV depuis
@@ -123,6 +123,6 @@ utilisée par le serveur distant — sans jamais transiter par le Mac.
 
 Le transport HTTP + `TokenVerifier` Entra ID sont portés et testés côté code (stdio
 intact pour Claude Desktop, `--transport streamable-http` pour Copilot 365). Reste à
-faire côté [prénom] dans le portail Entra ID (inscriptions d'application, groupe de sécurité,
+à faire côté administrateur dans le portail Entra ID (inscriptions d'application, groupe de sécurité,
 consentement admin) avant de pouvoir tester en bout en bout avec un vrai tenant, puis
 choisir et provisionner l'hébergement Azure (App Service ou Container Apps).

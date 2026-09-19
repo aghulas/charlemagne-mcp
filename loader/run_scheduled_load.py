@@ -28,7 +28,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 DEFAULT_CSV_DIR = (
-    r"C:\Users\<utilisateur>\OneDrive - l'établissement\Charlemagne 2025-2026\csv"
+    r"C:\Users\<utilisateur>\OneDrive - <Ecole>\Charlemagne\csv"  # a adapter par etablissement
 )
 DEFAULT_DB_PATH = REPO_ROOT / "data" / "administration_consolidee.db"
 LOG_DIR = REPO_ROOT / "logs"

@@ -27,7 +27,7 @@ Trois étapes distinctes, à ne pas fusionner (cf. `Plan_MCP_Charlemagne.md`, Ph
 1. **Export** : déclenché depuis Charlemagne (fonction native si elle existe, sinon automatisation
    `pywinauto` sur la machine de test ; dépôt manuel dans un dossier partagé pour la prod le temps de
    trouver une solution pour le RD Gateway). En attendant, un export réel est disponible dans
-   `C:\Users\<utilisateur>\OneDrive - l'établissement\Charlemagne 2025-2026\csv` (618 fichiers UTF-16-LE,
+   `C:\Users\<utilisateur>\OneDrive - <Ecole>\Charlemagne\csv` (fichiers UTF-16-LE,
    séparateur `,`).
 2. **Chargement CSV → SQLite** : `loader/load_charlemagne.py`, **idempotent** (upsert par clé primaire,
    jamais de vider/recharger complet) et produit un **rapport de diff** à chaque exécution (lignes

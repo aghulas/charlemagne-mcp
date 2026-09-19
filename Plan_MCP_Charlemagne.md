@@ -31,7 +31,7 @@ Point technique clé : Charlemagne est développé en WinDev/WebDev (PC Soft) et
 
 Avant d'écrire une ligne de code, trois questions à trancher parce qu'elles orientent toute l'architecture :
 
-1. **Portée des données de minors/RGPD.** Charlemagne contient des données d'élèves (souvent mineurs) et des données financières des familles. Un outil qui expose ça à un LLM — même en lecture seule — est un traitement automatisé de données sensibles. Si l'ambition va au-delà de ton propre usage à l'établissement, il faudra probablement une analyse d'impact (AIPD/DPIA) avant toute diffusion, et une politique claire de minimisation (quelles données un outil a réellement besoin d'exposer, pas "toute la base").
+1. **Portée des données de minors/RGPD.** Charlemagne contient des données d'élèves (souvent mineurs) et des données financières des familles. Un outil qui expose ça à un LLM — même en lecture seule — est un traitement automatisé de données sensibles. Si l'ambition va au-delà de ton propre usage dans ton établissement, il faudra probablement une analyse d'impact (AIPD/DPIA) avant toute diffusion, et une politique claire de minimisation (quelles données un outil a réellement besoin d'exposer, pas "toute la base").
 2. **Relation avec Aplim.** Se connecter à la base sous-jacente d'un logiciel commercial, même via un driver officiel, reste hors du cadre contractuel prévu par l'éditeur. Avant d'envisager une diffusion à d'autres établissements, ça vaut le coup de vérifier les CGU/contrat de licence Charlemagne, et idéalement d'ouvrir le sujet avec Aplim directement — soit ils ont déjà une doctrine là-dessus, soit ça peut devenir un partenariat plutôt qu'un contournement.
 3. **Lecture seule d'abord.** Techniquement et politiquement, commencer strictement en lecture (consultation, pas de modification via l'IA) réduit le risque de façon disproportionnée par rapport à l'effort économisé. L'écriture (import d'écritures, etc.) peut rester sur le circuit que tu as déjà validé (imports natifs Charlemagne), séparé du MCP.
 
@@ -120,7 +120,7 @@ Concrètement, ça veut dire que même une fois le serveur prêt, l'intégrer à
 ## Phase 8 — Diffusion à d'autres utilisateurs (si tu vas jusque-là)
 
 - Chaque établissement a sa propre base Charlemagne : l'outil doit être pensé multi-instance dès le départ (chaque utilisateur configure sa propre connexion), jamais une base centrale partagée.
-- Pilote interne à l'établissement sur plusieurs semaines avant toute idée de diffusion externe.
+- Pilote interne dans l'établissement sur plusieurs semaines avant toute idée de diffusion externe.
 - Revenir sur les points de la Phase 0 (Aplim, RGPD) avec le recul de l'usage réel avant d'ouvrir à qui que ce soit d'autre.
 
 ---

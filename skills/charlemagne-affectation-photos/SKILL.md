@@ -1,6 +1,6 @@
 ---
 name: charlemagne-affectation-photos
-description: "Use when preparing a folder of student/staff photos for Charlemagne's automatic photo assignment (l'établissement) via Administratif > Outils > Affectation des photos > Élèves – Adultes."
+description: "Use when preparing a folder of student/staff photos for Charlemagne's automatic photo assignment via Administratif > Outils > Affectation des photos > Élèves – Adultes."
 ---
 
 # Préparation des photos pour l'affectation automatique Charlemagne

@@ -5,7 +5,7 @@ from pathlib import Path
 
 def build_consolidation_db(
     csv_directory,
-    ddl_path="Schema_DDL_Etablissement.sql",
+    ddl_path="Schema_DDL.sql",
     output_db_name="administration_consolidee.db",
     rebuild=True,
 ):

@@ -1,6 +1,6 @@
 ---
 name: charlemagne-import-infos-complementaires
-description: "Use when preparing a CSV file to import/update Charlemagne 'informations complémentaires élèves' (l'établissement) via Administratif > Outils > Récupération d'informations complémentaires élèves."
+description: "Use when preparing a CSV file to import/update Charlemagne 'informations complémentaires élèves' via Administratif > Outils > Récupération d'informations complémentaires élèves."
 ---
 
 # Import Charlemagne — informations complémentaires élèves
