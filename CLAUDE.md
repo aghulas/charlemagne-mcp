@@ -132,6 +132,20 @@ pytest -v                        # tests (donnees synthetiques)
 ruff check . && ruff format .    # lint
 ```
 
+## Déploiement Azure (streamable-http)
+
+```
+python mcp_server.py --transport streamable-http --host 0.0.0.0 --port 8000
+```
+
+Web App Azure : `charlemagne-mcp-fontainebleau` (resource group `rg-charlemagne-mcp`,
+plan `plan-charlemagne-mcp`), **port 8000** (`WEBSITES_PORT=8000`) — cette commande
+exacte est le Startup Command posé dans Configuration → Stack settings (relevé le
+22/09/2026, ne pas deviner une autre valeur). Variables d'environnement : voir le
+dépôt partagé `mcp-entra-auth` pour `MCP_ENTRA_TENANT_ID` / `MCP_ENTRA_APP_ID_URI` /
+`MCP_ENTRA_ALLOWED_GROUP_ID` / `MCP_ENTRA_PUBLIC_URL`. CI/CD : GitHub Actions via
+Deployment Center, branché sur ce dépôt.
+
 Mets ce fichier à jour à chaque fois que tu découvres une subtilité du schéma ou de l'export (ex. une
 table sans clé primaire propre, un encodage particulier, un décalage entre l'export CSV et les colonnes
 attendues) — c'est ce genre de détail qui évite de retomber dans la même erreur.
