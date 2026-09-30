@@ -12,11 +12,25 @@ fait qu'elles soient renseignees ou non est indique.
 """
 
 import hashlib
+import re
 import os
 import sqlite3
 from pathlib import Path
 
-CHAMPS_MASQUES = {"RE_IBAN", "RE_BIC", "RE_COMPTE_BANQUE", "RE_CODE_BANQUE", "RE_CLE_RIB", "RE_GUICHET"}
+CHAMPS_MASQUES = {"RE_IBAN", "RE_BIC", "RE_COMPTE_BANQUE", "RE_CODE_BANQUE", "RE_CLE_RIB", "RE_CODE_GUICHET",
+                  "RE_DOMICILIATION", "RE_TIRE"}
+# Filet de securite par motif : tout champ bancaire (banque, guichet, RIB, IBAN, BIC,
+# domiciliation, titulaire du compte « TIRE », mandat, RUM) ou numero de securite
+# sociale est masque, meme s'il n'est pas liste ci-dessus. Le 30/09/2026, RE_DOMICILIATION
+# et RE_TIRE sortaient en clair, et RE_GUICHET ne correspondait a aucune colonne reelle
+# (la colonne s'appelle RE_CODE_GUICHET).
+_MOTIF_MASQUE = re.compile(r"(^|_)(IBAN|BIC|BANQUE|GUICHET|RIB|DOMICILIATION|TIRE|NUM_?SECU|MANDAT|RUM)(_|$)")
+
+
+def est_masque(champ: str) -> bool:
+    return champ in CHAMPS_MASQUES or bool(_MOTIF_MASQUE.search(champ.upper()))
+
+
 FICHES = (
     ("COM_ELEVES", "IDELEVE", "EL_NOM1", "EL_PRENOM1"),
     ("COM_RESPONSABLES", "IDRESPONSABLE", "RE_NOM1", "RE_PRENOM1"),
@@ -67,8 +81,8 @@ def _compte(conn, table) -> int:
 
 
 def _valeur(champ, v):
-    if champ in CHAMPS_MASQUES:
-        return "renseigné" if (v or "").strip() else "vide"
+    if est_masque(champ):
+        return "renseigné" if str(v or "").strip() else "vide"
     v = "" if v is None else str(v)
     if v.startswith("{\\rtf"):
         return "(texte mis en forme)"
@@ -136,6 +150,9 @@ def comparer_exports(actuel: sqlite3.Connection, precedent: sqlite3.Connection) 
                 continue
             diff = {c: {"avant": _valeur(c, rp[i + 1]), "apres": _valeur(c, ra[i + 1])}
                     for i, c in enumerate(cols) if ra[i + 1] != rp[i + 1]}
+            for c, d in diff.items():
+                if est_masque(c) and d["avant"] == d["apres"]:
+                    d["apres"] += " (modifié)"  # valeur masquee changee : on le dit, sans la montrer
             if not diff:
                 continue
             for c in diff:

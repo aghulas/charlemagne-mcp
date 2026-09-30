@@ -82,9 +82,15 @@ def test_personnel_mal_parametre_signale(conn):
     assert "notification des messages" in textes
 
 
-def test_enseignant_pas_de_point_attention(conn):
+def test_enseignant_resume_par_defaut(conn):
     a = _adulte(droits_ecoledirecte(conn), "3")
-    assert a["points_attention"] == [] and a["etablissements_coches"] == []
+    assert "resume" in a and "fonctionnalites_refusees" not in a and "points_attention" not in a
+
+
+def test_enseignant_detail_sur_demande(conn):
+    for res in (droits_ecoledirecte(conn, detail_enseignants=True), droits_ecoledirecte(conn, id_personnel="3")):
+        a = _adulte(res, "3")
+        assert a["points_attention"] == [] and a["etablissements_coches"] == []
 
 
 def test_sortis_exclus_par_defaut(conn):

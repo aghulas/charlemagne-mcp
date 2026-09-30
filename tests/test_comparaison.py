@@ -55,3 +55,43 @@ def test_aucun_changement():
     r = comparer_exports(a, b)
     assert r["tables_modifiees"] == [] and r["parametrage_facturation"] == {} and r["fiches"] == {}
     assert "alerte" not in r
+
+
+# ---- confidentialite : aucune donnee bancaire ni numero de securite sociale en clair ----
+@pytest.mark.parametrize("champ", [
+    "RE_IBAN", "RE_BIC", "RE_DOMICILIATION", "RE_TIRE", "RE_CODE_BANQUE", "RE_CODE_GUICHET",
+    "RE_COMPTE_BANQUE", "RE_CLE_RIB", "PE_IBAN", "PE_TIRE", "EL_NUM_SECU", "PE_NUMSECU",
+])
+def test_champs_sensibles_masques(champ):
+    from tools.comparaison import est_masque
+    assert est_masque(champ)
+
+
+@pytest.mark.parametrize("champ", ["RE_NOM1", "RE_MODE_REGLEMENT", "RE_TELDOMICILE", "EL_IDREGIME", "RE_PUBLIC"])
+def test_champs_ordinaires_non_masques(champ):
+    from tools.comparaison import est_masque
+    assert not est_masque(champ)
+
+
+def _base_banque(domiciliation, tire, iban):
+    c = sqlite3.connect(":memory:")
+    c.row_factory = sqlite3.Row
+    c.execute("CREATE TABLE COM_RESPONSABLES (IDRESPONSABLE TEXT, RE_NOM1 TEXT, RE_PRENOM1 TEXT, "
+              "RE_DOMICILIATION TEXT, RE_TIRE TEXT, RE_IBAN TEXT)")
+    c.execute("INSERT INTO COM_RESPONSABLES VALUES ('10', 'DURAND', 'Jean', ?, ?, ?)", (domiciliation, tire, iban))
+    return c
+
+
+def test_domiciliation_et_titulaire_jamais_en_clair():
+    # cas reel du 30/09/2026 : banque et titulaire du compte sortaient en clair
+    avant = _base_banque("", "", "FR7600000000000000000000001")
+    apres = _base_banque("BANQUE FICTIVE AGENCE X", "M OU MME DURAND JEAN", "FR7600000000000000000000002")
+    r = comparer_exports(apres, avant)
+    champs = r["fiches"]["COM_RESPONSABLES"]["details"][0]["champs"]
+    assert champs["RE_DOMICILIATION"] == {"avant": "vide", "apres": "renseigné"}
+    assert champs["RE_TIRE"] == {"avant": "vide", "apres": "renseigné"}
+    # IBAN change mais reste renseigne : le changement est signale sans la valeur
+    assert champs["RE_IBAN"] == {"avant": "renseigné", "apres": "renseigné (modifié)"}
+    texte = str(r)
+    assert "FICTIVE" not in texte and "DURAND JEAN" not in texte and "FR76" not in texte
+    avant.close(); apres.close()

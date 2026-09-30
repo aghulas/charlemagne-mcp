@@ -99,7 +99,11 @@ Deux tools pour le cycle « nouvel export -> qu'est-ce qui a change -> la factur
   (la plus recente de `CHARLEMAGNE_ARCHIVES_DIR` par defaut). Volumes par table, parametrage de la
   facturation (FAC_FORMULE, FAC_LIGNE, grilles de prix et de comptes, remises, regimes, quotients),
   fiches eleves/responsables/foyers, COM_LIENER (payeur, %, responsable principal), informations
-  complementaires, facturation recalculee ou validee. Les champs bancaires ne sortent jamais en clair.
+  complementaires, facturation recalculee ou validee. Les champs bancaires ne sortent jamais en clair :
+  liste `CHAMPS_MASQUES` + filet par motif `est_masque()` (IBAN, BIC, banque, guichet, RIB, domiciliation,
+  titulaire `TIRE`, mandat, RUM, numero de securite sociale) ; un champ masque qui change est signale
+  « renseigné (modifié) ». Corrige le 30/09/2026 : `RE_DOMICILIATION` et `RE_TIRE` sortaient en clair et
+  `RE_GUICHET` ne correspondait a aucune colonne (vraie colonne : `RE_CODE_GUICHET`).
   Alerte si les formules ont change sans que la preparation ait ete relancee.
 - `audit_de_facturation(validee=False)` (`tools/audit_facturation.py`) : controle la preparation
   (FAC_GESTION_*) ou la facturation validee (FAC_HISTO_* + FAC_COMPTA_* : numerotation, equilibre
@@ -130,7 +134,8 @@ notifications (`COM_PERSONNELS_PREFERENCE`, `PEP_TYPE` = `INT_*`), points d'atte
 options des profils utilisateurs Charlemagne (`ADM_PROFIL`, dont `EcoleD_LoginPass`). Libellés des
 codes rapprochés du support de formation Aplim « CED4 – Ecole Directe » (§3.1, §7.3) ; un code inconnu
 est renvoyé tel quel. Les enseignants (`PE_TYPE = 'prof'`) héritent de leurs droits par leur
-catégorie : pas de point d'attention pour eux. Hors export : case « Activer les notifications
+catégorie : pas de point d'attention pour eux, et renvoyés en résumé sauf `detail_enseignants=True` ou
+`id_personnel` précis. Hors export : case « Activer les notifications
 EcoleDirecte » de Charlemagne Outils, profil administrateur de la console ED.
 Tests : `tests/test_droits_ecoledirecte.py` (données synthétiques).
 

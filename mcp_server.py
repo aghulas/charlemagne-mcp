@@ -131,16 +131,19 @@ def register_tools(server: MCPServer) -> None:
             "coordonnees, demandes de modifications eleve...), points d'attention calcules, et "
             "options des profils utilisateurs Charlemagne (visualisation des mots de passe "
             "EcoleDirecte). Filtrable par IDPERSONNEL. Les enseignants heritent de leurs droits "
-            "par leur categorie. Lecture seule, a la date du dernier export."
+            "par leur categorie : ils ne sont renvoyes qu'en resume, sauf detail_enseignants=True "
+            "ou IDPERSONNEL precis. Lecture seule, a la date du dernier export."
         )
     )
     def droits_ecoledirecte_personnels(id_personnel: str | None = None,
-                                       actifs_seulement: bool = True) -> dict:
+                                       actifs_seulement: bool = True,
+                                       detail_enseignants: bool = False) -> dict:
         """Droits, fonctions et notifications EcoleDirecte des adultes."""
         conn = get_connection()
         try:
             res = personnels.droits_ecoledirecte(conn, id_personnel=id_personnel,
-                                                 actifs_seulement=actifs_seulement)
+                                                 actifs_seulement=actifs_seulement,
+                                                 detail_enseignants=detail_enseignants)
             res["note"] = (
                 "Base a jour a la date du dernier export Charlemagne charge, pas en temps reel. "
                 "Libelles des codes rapproches du support de formation Aplim (CED4 - Ecole Directe)."

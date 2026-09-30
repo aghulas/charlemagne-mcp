@@ -129,8 +129,14 @@ def droits_ecoledirecte(
     conn: sqlite3.Connection,
     id_personnel: str | None = None,
     actifs_seulement: bool = True,
+    detail_enseignants: bool = False,
 ) -> dict:
     """Droits EcoleDirecte de chaque adulte, tels que parametres dans Charlemagne.
+
+    detail_enseignants : par defaut, un enseignant (PE_TYPE 'prof') n'est
+        renvoye qu'en resume (ses droits viennent de sa categorie, et le detail
+        de ses 18 fonctionnalites noierait les points utiles). True, ou un
+        id_personnel precis, donne le detail complet.
 
     Pour chaque adulte : coche "Utilisateur EcoleDirecte", fonctions,
     etablissements coches, fonctionnalites autorisees / refusees,
@@ -218,6 +224,16 @@ def droits_ecoledirecte(
                     "Notifiée des demandes de modification de coordonnées mais pas des "
                     "demandes de modifications élève (activités, régime...)."
                 )
+        if est_prof and not (detail_enseignants or id_personnel):
+            resultats.append({
+                "id_personnel": pid,
+                "nom_prenom": f"{a['PE_NOM']} {a['PE_PRENOM']}",
+                "type": a["PE_TYPE"],
+                "utilisateur_ecoledirecte": utilisateur_ed,
+                "fonctions": fonctions.get(pid, []),
+                "resume": "Enseignant : droits hérités de la catégorie (détail avec detail_enseignants=True).",
+            })
+            continue
         resultats.append({
             "id_personnel": pid,
             "nom_prenom": f"{a['PE_NOM']} {a['PE_PRENOM']}",
