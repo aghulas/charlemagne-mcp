@@ -56,11 +56,11 @@ def conn():
         INSERT INTO COM_RESPONSABLES VALUES ('R1', 'M.', NULL, 'DURAND', 'Paul',
             NULL, 'paul@example.org', NULL, '0600000001', NULL,
             NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
-            '0100000000', '77300', 'FONTAINEBLEAU', 'FR76XXXX');
+            '0100000000', '99999', 'TESTVILLE', 'FR76XXXX');
         INSERT INTO COM_RESPONSABLES VALUES ('R2', 'Mme', NULL, 'DURAND', 'Marie',
             'LEROY', 'marie@example.org', 'marie.pro@example.org', '0600000002', NULL,
             NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
-            NULL, '77300', 'FONTAINEBLEAU', 'FR76YYYY');
+            NULL, '99999', 'TESTVILLE', 'FR76YYYY');
         INSERT INTO COM_RESPONSABLES VALUES ('R3', 'Mme', NULL, 'MARTIN', 'Sophie',
             NULL, 'sophie@example.org', NULL, '0600000003', NULL,
             'M.', NULL, 'MARTIN', 'Luc', NULL, 'luc@example.org', NULL,
