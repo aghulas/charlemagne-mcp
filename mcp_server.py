@@ -20,7 +20,7 @@ import argparse
 from mcp.server.mcpserver import MCPServer
 
 from db.connection import get_connection
-from tools import eleves, facturation, personnels
+from tools import audit_facturation, comparaison, eleves, facturation, personnels, responsables
 
 INSTRUCTIONS = (
     "Acces en lecture seule aux donnees de gestion Charlemagne, "
@@ -71,7 +71,7 @@ def register_tools(server: MCPServer) -> None:
 
     @server.tool(
         description=(
-            "Liste des eleves (IDELEVE, nom, prenom, classe), filtrable par classe et par "
+            "Liste des eleves (IDELEVE, nom, prenom, sexe, classe), filtrable par classe et par "
             "statut actif (par defaut : exclut les eleves sortis en cours d'annee sur l'export "
             "charge). Sert a retrouver l'IDELEVE fiable d'un eleve a partir de son nom - par "
             "exemple avant de preparer un fichier a importer dans Charlemagne - plutot que de "
@@ -120,6 +120,103 @@ def register_tools(server: MCPServer) -> None:
             }
         finally:
             conn.close()
+
+
+    @server.tool(
+        description=(
+            "Responsables (parents/tuteurs) des eleves, groupes par eleve : lien (pere/mere), "
+            "civilite, nom, prenom, emails perso et pro, telephones, code postal et ville. "
+            "Filtrable par eleve (IDELEVE) ou par classe. Un eleve peut avoir plusieurs "
+            "responsables : ils sont tous retournes, via la table de liaison COM_LIENER. Sert "
+            "notamment a controler la coherence des coordonnees familiales avec un autre outil. "
+            "N'expose AUCUNE coordonnee bancaire ni parametre de facturation. Ne couvre PAS les "
+            "enseignants et personnels (COM_PERSONNELS, voir liste_personnels)."
+        )
+    )
+    def responsables_eleves(
+        id_eleve: str | None = None,
+        classe: str | None = None,
+        actifs_seulement: bool = True,
+    ) -> dict:
+        """Responsables d'un eleve, d'une classe, ou de tous les eleves actifs."""
+        conn = get_connection()
+        try:
+            resultats = responsables.responsables_eleves(
+                conn, id_eleve=id_eleve, classe=classe, actifs_seulement=actifs_seulement
+            )
+            return {
+                "nb_eleves": len(resultats),
+                "nb_responsables": sum(len(e["responsables"]) for e in resultats),
+                "eleves": resultats,
+                "note": (
+                    "Base a jour a la date du dernier export Charlemagne charge, pas en temps "
+                    "reel. Un eleve sans lien dans COM_LIENER n'apparait pas."
+                ),
+            }
+        finally:
+            conn.close()
+
+
+    @server.tool(
+        description=(
+            "Audit complet de la facturation des familles, sur la preparation en cours "
+            "(validee=False) ou sur la derniere facturation validee (validee=True). Compare "
+            "chaque ligne facturee aux donnees sources (jours de cantine, activites, "
+            "informations complementaires, liens eleve-responsable) et aux regles tarifaires "
+            "de l'etablissement (fichier CHARLEMAGNE_REGLES_FACTURATION) : perimetre, "
+            "repartition entre payeurs, cantine/etude/garderie/activites, reductions fratrie "
+            "(regle, justificatifs, cumul avec le personnel, payeur non responsable principal), "
+            "remises, APEL, echeances, soldes reportes ; pour une facturation validee, "
+            "numerotation et equilibre comptable. A lancer apres chaque nouvelle preparation, "
+            "avant de valider. N'expose aucune donnee bancaire."
+        )
+    )
+    def audit_de_facturation(validee: bool = False) -> dict:
+        """Audit de la facturation (preparation ou facturation validee)."""
+        conn = get_connection()
+        try:
+            return audit_facturation.audit_facturation(conn, audit_facturation.charger_regles(), validee=validee)
+        except ValueError as exc:
+            return {"error": str(exc)}
+        finally:
+            conn.close()
+
+    @server.tool(
+        description=(
+            "Compare la base actuelle a un export precedent archive (par defaut le plus recent "
+            "du dossier CHARLEMAGNE_ARCHIVES_DIR ; sinon indiquer le nom de fichier) : tables "
+            "dont le volume change, parametrage de la facturation (formules, lignes, grilles de "
+            "prix et de comptes, remises, regimes, quotients), fiches eleves/responsables/foyers "
+            "modifiees, liens eleve-responsable (payeur, pourcentage, responsable principal), "
+            "informations complementaires, et si la facturation a ete recalculee ou validee. "
+            "A utiliser en premier a chaque nouvel export pour savoir ce qui a change. Les "
+            "donnees bancaires ne sont jamais renvoyees (seulement renseigne/vide)."
+        )
+    )
+    def comparer_exports(archive: str | None = None) -> dict:
+        """Changements entre la base actuelle et une archive (la plus recente par defaut)."""
+        archives = comparaison.lister_archives()
+        if archive:
+            choix = [a for a in archives if a.endswith(archive)]
+            if not choix:
+                return {"error": f"Archive {archive!r} introuvable.", "archives_disponibles": [a.rsplit('/', 1)[-1] for a in archives[-10:]]}
+            chemin = choix[-1]
+        elif archives:
+            chemin = archives[-1]
+        else:
+            return {"error": "Aucune archive : definir CHARLEMAGNE_ARCHIVES_DIR."}
+        conn = get_connection()
+        try:
+            prec = comparaison.ouvrir_archive(chemin)
+        except ValueError as exc:
+            conn.close()
+            return {"error": str(exc)}
+        try:
+            res = comparaison.comparer_exports(conn, prec)
+            res["archive_comparee"] = chemin.rsplit("/", 1)[-1]
+            return res
+        finally:
+            conn.close(); prec.close()
 
 
 def main() -> None:

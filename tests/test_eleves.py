@@ -16,7 +16,7 @@ def conn():
         """
         CREATE TABLE COM_ELEVES (
             IDELEVE TEXT PRIMARY KEY, EL_NOM1 TEXT, EL_PRENOM1 TEXT,
-            EL_IDCLASSE TEXT, EL_DATE_SORTIE TEXT
+            EL_SEXE TEXT, EL_IDCLASSE TEXT, EL_DATE_SORTIE TEXT
         );
         CREATE TABLE COM_CLASSES (IDCLASSE TEXT PRIMARY KEY, CL_LIBELLE TEXT);
 
@@ -24,11 +24,11 @@ def conn():
         INSERT INTO COM_CLASSES VALUES ('C2', 'CE1 B');
 
         -- Alice : active, CE1 A
-        INSERT INTO COM_ELEVES VALUES ('1', 'DURAND', 'Alice', 'C1', NULL);
+        INSERT INTO COM_ELEVES VALUES ('1', 'DURAND', 'Alice', 'F', 'C1', NULL);
         -- Bob : actif, CE1 A
-        INSERT INTO COM_ELEVES VALUES ('2', 'MARTIN', 'Bob', 'C1', '');
+        INSERT INTO COM_ELEVES VALUES ('2', 'MARTIN', 'Bob', 'M', 'C1', '');
         -- Chloe : sortie en cours d'annee, CE1 B
-        INSERT INTO COM_ELEVES VALUES ('3', 'PETIT', 'Chloe', 'C2', '2026-03-15');
+        INSERT INTO COM_ELEVES VALUES ('3', 'PETIT', 'Chloe', 'F', 'C2', '2026-03-15');
         """
     )
     yield conn

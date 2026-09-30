@@ -1,0 +1,51 @@
+{
+  "_commentaire": "Exemple de fichier de regles pour tools/audit_facturation.py. Copier hors du depot, adapter les codes de lignes et les tarifs de l'etablissement, puis pointer CHARLEMAGNE_REGLES_FACTURATION dessus. Valeurs fictives.",
+  "etablissement": "Etablissement exemple",
+  "annee": "AAAA-AAAA",
+  "date_rentree": "AAAAMMJJ",
+  "cantine": {
+    "ligne": "CANTINE{n}J",
+    "ligne_panier": "CANTINEPAI{n}J",
+    "regime_panier": "8",
+    "regime_externe": "2",
+    "tarifs": {"1": 100, "2": 200, "3": 300, "4": 400},
+    "tarifs_panier": {"1": 50, "2": 100, "3": 150, "4": 200}
+  },
+  "garderie": {
+    "activite_matin": "MATIN",
+    "activite_etude": "ETUDE",
+    "ligne_matin": "GARDM",
+    "tarif_matin": 100,
+    "ligne_etude": "ETUDE{n}J",
+    "tarifs_etude": {"1": 100, "2": 200, "3": 300, "4": 400},
+    "ligne_forfait": "GARDEMS",
+    "jours_forfait": 4,
+    "tarif_forfait": 450
+  },
+  "activites": [
+    {"activite": "CODE_ACTIVITE_CHARLEMAGNE", "ligne": "CODE_LIGNE", "tarif": 100}
+  ],
+  "informations_complementaires": [
+    {"code_ice": "CODE_ICE", "valeur": 1, "ligne": "CODE_LIGNE", "tarif": 10}
+  ],
+  "lignes_regroupement_contribution": ["CONTRIB"],
+  "fratrie": {
+    "prefixe_lignes": "FAMILLE",
+    "montants": {"2": -50, "3": -200, "4": -250},
+    "info_nb_exterieurs": "Ext.",
+    "info_justificatif": "Justificatif Fraterie",
+    "cumul_avec_personnel": false
+  },
+  "codes_personnel": ["CODE_QUOTIENT2_PERSONNEL"],
+  "remises_eleve_autorisees": [],
+  "apel": {
+    "ligne": "APEL",
+    "tarifs": {"Oui": 20, "Ext": 20, "Non": 0},
+    "valeur_exterieur": "Ext",
+    "tarif_exterieur_justifie": 10,
+    "info_justificatif": "Justificatif APEL",
+    "info_foyer_separe": "Foyer S"
+  },
+  "echeances": {"mode_prelevement": "Prélèvement", "nb_prelevement": 10},
+  "solde_a_signaler": 100
+}

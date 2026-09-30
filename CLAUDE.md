@@ -93,6 +93,33 @@ Patron à réutiliser pour chaque nouveau tool :
    sait qu'une donnée n'est pas fiable (ex. `solde_eleve` rappelle que "statut de facture"/"impayés" ne
    sont pas déductibles de ce résultat).
 
+## Audit de facturation et comparaison d'exports (fait)
+Deux tools pour le cycle « nouvel export -> qu'est-ce qui a change -> la facturation est-elle juste ? » :
+- `comparer_exports(archive=None)` (`tools/comparaison.py`) : compare la base servie a une archive
+  (la plus recente de `CHARLEMAGNE_ARCHIVES_DIR` par defaut). Volumes par table, parametrage de la
+  facturation (FAC_FORMULE, FAC_LIGNE, grilles de prix et de comptes, remises, regimes, quotients),
+  fiches eleves/responsables/foyers, COM_LIENER (payeur, %, responsable principal), informations
+  complementaires, facturation recalculee ou validee. Les champs bancaires ne sortent jamais en clair.
+  Alerte si les formules ont change sans que la preparation ait ete relancee.
+- `audit_de_facturation(validee=False)` (`tools/audit_facturation.py`) : controle la preparation
+  (FAC_GESTION_*) ou la facturation validee (FAC_HISTO_* + FAC_COMPTA_* : numerotation, equilibre
+  produits - reductions = clients). **Generique** : tarifs, codes de lignes et regles viennent du
+  fichier JSON `CHARLEMAGNE_REGLES_FACTURATION` (format : `docs/regles_facturation.exemple.json`),
+  jamais du code — le fichier reel de l'etablissement vit hors du depot.
+
+Comportements du moteur de formules Charlemagne qui justifient ces controles (constates sur une
+facturation reelle, a garder en tete) :
+- la premiere condition vraie d'une formule l'emporte (exclusions a placer en premier) ;
+- une ligne a une formule de quantite ET une formule de prix ; reutiliser une ancienne formule de prix
+  comme quantite multiplie le montant ;
+- `FAMNBENFANTS` ne compte que les enfants dont le responsable porteur de la ligne est responsable
+  principal (LER_TYPE_RESP = 1) : un payeur a 100 % non principal ne recoit aucune reduction fratrie ;
+- la valeur « Non » de COT_APEL n'est pas 0 ; un champ vide n'est pas egal a 0 ;
+- une ligne n'est facturee a une classe que si elle a un compte dans FAC_GRILLE_COMPTE ;
+- le code de frequence reste « TARIF » meme avec un echeancier mensuel : lire GF_ECHE_PRIXn.
+Tests : `tests/test_comparaison.py`, `tests/test_audit_facturation.py` (donnees synthetiques).
+Bout en bout : `scripts/smoke_test_audit.py` (vraie base, ne rien commiter de sa sortie).
+
 ## Règles non négociables
 - Jamais de concaténation de chaînes SQL — requêtes paramétrées uniquement (`sqlite3` avec `?`)
 - Jamais d'identifiants en dur dans le code — variables d'environnement / config uniquement
@@ -104,7 +131,9 @@ Patron à réutiliser pour chaque nouveau tool :
 charlemagne-mcp/
 ├── mcp_server.py                        # serveur MCP stdio - tools declares ici
 ├── tools/
-│   └── facturation.py                   # solde_eleve (+ prochains tools du domaine facturation)
+│   ├── facturation.py                   # solde_eleve
+│   ├── audit_facturation.py             # audit_de_facturation (regles : CHARLEMAGNE_REGLES_FACTURATION)
+│   └── comparaison.py                   # comparer_exports (archives : CHARLEMAGNE_ARCHIVES_DIR)
 ├── db/
 │   └── connection.py                    # connexion SQLite lecture seule (CHARLEMAGNE_DB ou defaut)
 ├── loader/

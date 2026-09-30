@@ -13,7 +13,11 @@ def liste_eleves(
     classe: str | None = None,
     actifs_seulement: bool = True,
 ) -> list[dict]:
-    """Liste des eleves avec IDELEVE, nom, prenom et classe.
+    """Liste des eleves avec IDELEVE, nom, prenom, sexe et classe.
+
+    Le sexe est repris tel quel de COM_ELEVES.EL_SEXE ('M' / 'F' sur l'export
+    courant), sans normalisation : c'est la valeur saisie dans Charlemagne,
+    utile notamment pour un controle de coherence avec un autre outil.
 
     Sert de base fiable pour retrouver l'IDELEVE d'un eleve a partir de son
     nom (ex. avant un import externe cote Charlemagne), plutot que de
@@ -30,8 +34,8 @@ def liste_eleves(
     cur = conn.cursor()
 
     query = """
-        SELECT e.IDELEVE, e.EL_NOM1, e.EL_PRENOM1, e.EL_DATE_SORTIE,
-               c.CL_LIBELLE
+        SELECT e.IDELEVE, e.EL_NOM1, e.EL_PRENOM1, e.EL_SEXE,
+               e.EL_DATE_SORTIE, c.CL_LIBELLE
         FROM COM_ELEVES e
         LEFT JOIN COM_CLASSES c ON c.IDCLASSE = e.EL_IDCLASSE
         WHERE 1=1
@@ -51,6 +55,7 @@ def liste_eleves(
             "nom": row["EL_NOM1"],
             "prenom": row["EL_PRENOM1"],
             "nom_prenom": f"{row['EL_NOM1']} {row['EL_PRENOM1']}",
+            "sexe": row["EL_SEXE"],
             "classe": row["CL_LIBELLE"],
             "actif": not bool(row["EL_DATE_SORTIE"]),
         }
