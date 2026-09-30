@@ -27,6 +27,17 @@ Cette skill prépare le fichier Excel à importer dans Charlemagne pour mettre �
 4. Avant de livrer, résumer à l'utilisateur : nombre de lignes par type, identifiants non trouvés ou ambigus, et rappeler les deux zones d'incertitude ci-dessus (quel champ téléphone/mail est visé côté base, comportement écrasement/conservation) pour qu'il valide sur un petit échantillon avant un import complet.
 5. Livrer le fichier comme n'importe quel livrable, jamais d'import automatique dans Charlemagne — c'est toujours l'utilisateur qui importe depuis l'écran Charlemagne qui fournit ce modèle.
 
+## Téléphones : format et parents
+
+- **Format attendu** pour l'envoi de SMS depuis EcoleDirecte : `06 12 34 56 78` (5 groupes de 2 chiffres).
+  Normaliser : retirer points/tirets, `+33` / `0033` → `0`. Ne **pas** reformater automatiquement les
+  numéros étrangers, les mentions (« priorité », « bureau »), ni les cellules contenant plusieurs
+  numéros : les lister pour traitement manuel.
+- Cet import ne couvre que les **élèves** et les **adultes de l'établissement**. Pour les
+  **responsables (parents)**, passer par l'outil `ed_admin_demande_telephones` du connecteur
+  EcoleDirecte admin : demande de modification des coordonnées au nom de la famille (simulation,
+  puis accord, puis envoi), validée ensuite par le secrétariat dans Charlemagne.
+
 ## Vigilance données
 
 Ce fichier contient des coordonnées (email, téléphone) d'élèves mineurs et d'adultes. Même discipline que le reste du projet Charlemagne : pas de données réelles dans des exemples ou du code versionné, fichier livré uniquement à l'utilisateur qui en a fait la demande.

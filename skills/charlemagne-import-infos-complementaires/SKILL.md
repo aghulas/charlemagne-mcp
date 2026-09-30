@@ -1,11 +1,11 @@
 ---
 name: charlemagne-import-infos-complementaires
-description: "Use when preparing a CSV file to import/update Charlemagne 'informations complémentaires élèves' via Administratif > Outils > Récupération d'informations complémentaires élèves."
+description: "Use when preparing a CSV file to import/update Charlemagne 'informations complémentaires élèves' via Administratif › Outils › Récupération d'informations complémentaires élèves — PAI, allergies, régime alimentaire, bavoir, classe découverte… Also use when the user wants to update informations complémentaires of RESPONSABLES (justificatifs, fratrie, foyer séparé): there is no import for them, produce a manual entry list instead."
 ---
 
 # Import Charlemagne — informations complémentaires élèves
 
-Cette skill prépare un fichier CSV prêt à être importé dans Charlemagne pour mettre à jour des "informations complémentaires" sur des élèves (catégories personnalisées de type TEXTE : ex. régime alimentaire, transport, activité, etc.). Le fichier généré n'est jamais importé automatiquement — il est livré à l'utilisateur pour import manuel dans Charlemagne (Administratif / Outils / Récupération d'informations complémentaires élèves).
+Cette skill prépare un fichier CSV prêt à être importé dans Charlemagne pour mettre à jour des "informations complémentaires" sur des élèves (catégories personnalisées de type TEXTE — ex. PAI, allergie alimentaire, régime alimentaire — ou NOMBRE — ex. bavoir, classe découverte = 1). Le fichier généré n'est jamais importé automatiquement — il est livré à l'utilisateur pour import manuel dans Charlemagne (Administratif / Outils / Récupération d'informations complémentaires élèves).
 
 ## Contrat du fichier (documenté par Aplim, aide.aplim.mayday.cx)
 
@@ -15,7 +15,7 @@ Cette skill prépare un fichier CSV prêt à être importé dans Charlemagne pou
   - **Par identifiant** : première colonne = IDELEVE Charlemagne. Variante préférée : pas d'ambiguïté de matching.
   - **Par nom** : première colonne intitulée exactement `NOM PRENOM` (le nom seul ne suffit pas), contenu = nom et prénom **orthographiés exactement comme dans Charlemagne**. Un onglet "Élèves" dans l'écran d'import Charlemagne permet à l'utilisateur de vérifier/ajuster la correspondance après coup.
 - Colonnes suivantes = une colonne par catégorie d'info complémentaire à importer. **Les champs non renseignés doivent rester vides** (jamais la chaîne "NULL" ou "None").
-- Prérequis côté Charlemagne (à rappeler à l'utilisateur, pas à faire soi-même) : les catégories cibles doivent déjà exister, créées en type TEXTE, dans *Tables / Informations complémentaires élèves / Catégories* — et l'utilisateur doit ensuite faire correspondre chaque catégorie à la colonne du fichier lors de l'import.
+- Prérequis côté Charlemagne (à rappeler à l'utilisateur, pas à faire soi-même) : les catégories cibles doivent déjà exister, créées (type TEXTE ou NOMBRE) dans *Tables / Informations complémentaires élèves / Catégories* — et l'utilisateur doit ensuite faire correspondre chaque catégorie à la colonne du fichier lors de l'import.
 - **Piège du comportement cumulatif** : un nouvel import conserve par défaut les valeurs précédemment importées pour les élèves absents du nouveau fichier — ça peut faire apparaître plus d'élèves que prévu après import. Si l'utilisateur veut un remplacement complet (pas un ajout/complément), le prévenir explicitement qu'il doit d'abord importer un CSV vide (mêmes colonnes, aucune ligne) pour réinitialiser, puis importer le fichier réel ensuite. Ne pas faire ce choix à la place de l'utilisateur — demander s'il veut un import cumulatif ou un remplacement complet avant de livrer le fichier final.
 
 ## Déroulé
@@ -26,9 +26,33 @@ Cette skill prépare un fichier CSV prêt à être importé dans Charlemagne pou
    - Sinon, si la base SQLite consolidée (`data/administration_consolidee.db`) est accessible directement, interroger `COM_ELEVES` (IDELEVE, EL_NOM1, EL_PRENOM1) de la même façon.
    - Si ni l'un ni l'autre n'est disponible, ou en cas de doute (homonymes, orthographe qui ne colle pas), utiliser la variante "NOM PRENOM" et signaler explicitement à l'utilisateur les cas ambigus ou non trouvés plutôt que de deviner — un élève mal apparié écrase la mauvaise fiche.
    - Rappel : cette recherche ne couvre jamais les anciens élèves (table ADM_ANCIEN, identifiants dans un espace séparé) — un ancien élève ne peut pas être ciblé par cet import.
-3. Construire le CSV : en-tête exact, séparateur `;`, encodage compatible Excel (UTF-8 avec BOM, ou celui que l'utilisateur précise), champs vides laissés vides.
+3. Construire le CSV : en-tête exact, séparateur `;`, **encodage Windows (CP-1252)**, champs vides laissés vides. ⚠️ Constaté à l'usage : un CSV en UTF-8 (même avec BOM) est importé avec les accents cassés (« Å’ufs » au lieu de « Œufs ») ; il a fallu tout réimporter en CP-1252. Remplacer au besoin les caractères absents de CP-1252.
 4. Avant de livrer, résumer à l'utilisateur : nombre de lignes, colonnes/catégories couvertes, élèves non trouvés ou ambigus (s'il y en a), et rappeler le comportement cumulatif si un remplacement complet a été demandé (fournir aussi le CSV vide de réinitialisation dans ce cas).
 5. Livrer le fichier comme n'importe quel livrable (SendUserFile), jamais d'import automatique dans Charlemagne — c'est toujours l'utilisateur qui importe depuis l'interface Charlemagne.
+
+## Ce qu'on a appris à l'usage
+
+- **Un import ne vide pas une valeur** : une cellule vide laisse la valeur existante en place. Pour
+  effacer une information d'un élève, l'utilisateur doit la supprimer à la main dans Charlemagne —
+  le lui dire explicitement.
+- **Réimporter une ligne remplace sa valeur** : pour corriger quelques élèves, un petit CSV avec
+  seulement ces lignes suffit.
+- **Valeurs testées par des formules de facturation** : utiliser exactement la valeur attendue par
+  la formule (ex. `1` pour « Bavoir », « Classe découverte »), pas « Oui » ou « présent ».
+- **Vérifier après import** sur l'export suivant (tool `comparer_exports` du connecteur Charlemagne :
+  section informations complémentaires) : nombre de valeurs, accents, élèves attendus.
+
+## Informations complémentaires des RESPONSABLES : pas d'import
+
+Charlemagne ne propose pas d'import équivalent pour les responsables (vérifié avec l'utilisateur).
+Pour « Ext. Scolarisée Enseignement Catholique », « Justificatif Fraterie », « Justificatif APEL »,
+« Foyer séparé »… produire une **liste de saisie manuelle** (Excel) : identifiant du responsable,
+nom, enfants et classes, champ, valeur à saisir, déjà saisi ou non.
+- Placer la valeur sur le **responsable principal payeur** des enfants, et sur le même responsable
+  que les informations liées (ex. le justificatif de fratrie sur celui qui porte le nombre
+  d'enfants extérieurs) : les formules de facturation lisent le responsable de la ligne facturée.
+- Parents séparés : saisir sur **les deux** parents quand la formule s'applique à chaque moitié.
+- Ne saisir un justificatif que si le document de **l'année en cours** a été reçu.
 
 ## Vigilance données
 
