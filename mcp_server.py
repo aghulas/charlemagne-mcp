@@ -20,7 +20,7 @@ import argparse
 from mcp.server.mcpserver import MCPServer
 
 from db.connection import get_connection
-from tools import audit_facturation, comparaison, eleves, facturation, personnels, responsables
+from tools import audit_facturation, comparaison, eleves, facturation, famille, personnels, responsables
 
 INSTRUCTIONS = (
     "Acces en lecture seule aux donnees de gestion Charlemagne, "
@@ -176,6 +176,31 @@ def register_tools(server: MCPServer) -> None:
         conn = get_connection()
         try:
             return audit_facturation.audit_facturation(conn, audit_facturation.charger_regles(), validee=validee)
+        except ValueError as exc:
+            return {"error": str(exc)}
+        finally:
+            conn.close()
+
+    @server.tool(
+        description=(
+            "Fiche famille complete en un appel, a partir d'un eleve (id_eleve = IDELEVE) ou d'un "
+            "foyer (id_foyer = IDFOYER) : foyer (cotisation APEL Oui/Ext/Non), responsables (lien, "
+            "responsable principal, payeur et pourcentage, mode de reglement, IBAN renseigne ou "
+            "non, enfants a charge, quotients, informations complementaires - ex. Ext. scolarisee, "
+            "Justificatif Fraterie), enfants (classe, regime, jours de cantine, activites, "
+            "informations complementaires, remises), lignes facturees non nulles (preparation en "
+            "cours, sinon derniere facturation validee ; validee=True/False pour forcer) avec le "
+            "total par responsable, et pieces a verser recues ou non. A utiliser pour verifier une "
+            "famille apres une fiche forfaits, un certificat ou une facture APEL. Lecture seule, "
+            "aucune coordonnee bancaire (seulement renseigne/vide)."
+        )
+    )
+    def fiche_famille(id_eleve: str | None = None, id_foyer: str | None = None,
+                      validee: bool | None = None) -> dict:
+        """Tout sur une famille : responsables, enfants, facturation, pieces recues."""
+        conn = get_connection()
+        try:
+            return famille.fiche_famille(conn, id_eleve=id_eleve, id_foyer=id_foyer, validee=validee)
         except ValueError as exc:
             return {"error": str(exc)}
         finally:
