@@ -172,9 +172,17 @@ est composée cette facture").
    traite toujours `NaN == NaN`, donc une vraie collision reste détectée et la
    table reste ignorée dans ce cas.
 
-   Restent ignorées, clé non trouvée : `COM_PERSONNELS_ED` (candidat
-   `(IDPERSONNEL, PED_TYPE)` insuffisant — 337 doublons sur 362 lignes,
-   une 3e composante de clé n'a pas été identifiée), `FAC_COMPTA_GENERAL`
+   `COM_PERSONNELS_ED` (droits EcoleDirecte des adultes) : clé trouvée le
+   30/09/2026, `ID_PERSO_ED` (362 valeurs distinctes sur 362 lignes) —
+   le candidat `(IDPERSONNEL, PED_TYPE)` était insuffisant (337 doublons).
+   Colonnes utiles : `PED_TYPE` (`ETAB` = établissement coché, `MODULE` =
+   fonctionnalité), `PED_CLEF` (id d'établissement ou code de
+   fonctionnalité : `MESSAGE`, `ADMIN`, `AGENDA`, `POSTIT`, `ABS`, `RET`,
+   `CDT`, `NOTES`, `MOY`, `CONSEIL`, `APPEL`, `AFF_EL`, `BL_PARENTS`,
+   `CARNET_CORRESP`, `SANCTION`, `ENCOURAGE`, `EDT`, `PAIEMENT`),
+   `PED_AUTORIS` (`1`/`0`). Voir `tools/personnels.py`.
+
+   Restent ignorées, clé non trouvée : `FAC_COMPTA_GENERAL`
    (probablement pas de clé naturelle — table d'agrégation par compte
    général, vraisemblablement dupliquée quand une famille a plusieurs
    enfants), et 7 tables jamais encore testées : `ADM_ANC_CURSUS`,

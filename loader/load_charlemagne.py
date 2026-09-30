@@ -51,8 +51,10 @@ COMPOSITE_KEYS = {
     "FAC_GRILLE_PRIX": ["GP_CODE", "IDCLASSE"],
     "ADM_PROFIL": ["ID_UTILISATEUR", "PR_TYPE"],
     "REC_ENTREE_ELEVE": ["IDELEVE", "EE_DATE"],
-    # Restent ignorees (cle non trouvee) : COM_PERSONNELS_ED (3e composante non
-    # identifiee), FAC_COMPTA_GENERAL (probablement pas de cle naturelle, table
+    # Droits EcoleDirecte des adultes : ID_PERSO_ED est unique (362/362 lignes,
+    # export du 30/09/2026) ; la 1ere colonne (IDPERSONNEL) ne l'est pas.
+    "COM_PERSONNELS_ED": ["ID_PERSO_ED"],
+    # Restent ignorees (cle non trouvee) : FAC_COMPTA_GENERAL (probablement pas de cle naturelle, table
     # d'agregation multi-enfants), et les tables jamais encore testees :
     # ADM_ANC_CURSUS, ADM_LISTES_RUBRIQUES, ADM_STAT_RUBRIQUES, COM_BADGE,
     # COM_FORM_MULTIPLE, COM_LOGS, VS_EDITION_PARAM.

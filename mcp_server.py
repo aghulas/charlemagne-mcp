@@ -121,6 +121,36 @@ def register_tools(server: MCPServer) -> None:
         finally:
             conn.close()
 
+    @server.tool(
+        description=(
+            "Droits EcoleDirecte des adultes tels que parametres dans Charlemagne (fiche adulte, "
+            "onglet EcoleDirecte) : coche 'Utilisateur EcoleDirecte', fonctions (Secretariat, "
+            "Direction... - sans fonction, un personnel est invisible des familles dans la "
+            "messagerie), etablissements coches, fonctionnalites autorisees/refusees, "
+            "notifications actives/inactives (messages en attente, demandes de modification de "
+            "coordonnees, demandes de modifications eleve...), points d'attention calcules, et "
+            "options des profils utilisateurs Charlemagne (visualisation des mots de passe "
+            "EcoleDirecte). Filtrable par IDPERSONNEL. Les enseignants heritent de leurs droits "
+            "par leur categorie. Lecture seule, a la date du dernier export."
+        )
+    )
+    def droits_ecoledirecte_personnels(id_personnel: str | None = None,
+                                       actifs_seulement: bool = True) -> dict:
+        """Droits, fonctions et notifications EcoleDirecte des adultes."""
+        conn = get_connection()
+        try:
+            res = personnels.droits_ecoledirecte(conn, id_personnel=id_personnel,
+                                                 actifs_seulement=actifs_seulement)
+            res["note"] = (
+                "Base a jour a la date du dernier export Charlemagne charge, pas en temps reel. "
+                "Libelles des codes rapproches du support de formation Aplim (CED4 - Ecole Directe)."
+            )
+            return res
+        except ValueError as exc:
+            return {"error": str(exc)}
+        finally:
+            conn.close()
+
 
     @server.tool(
         description=(

@@ -120,6 +120,20 @@ facturation reelle, a garder en tete) :
 Tests : `tests/test_comparaison.py`, `tests/test_audit_facturation.py` (donnees synthetiques).
 Bout en bout : `scripts/smoke_test_audit.py` (vraie base, ne rien commiter de sa sortie).
 
+## Droits EcoleDirecte des adultes (fait, 30/09/2026)
+`droits_ecoledirecte_personnels(id_personnel=None, actifs_seulement=True)` (`tools/personnels.py`,
+fonction `droits_ecoledirecte`) : pour chaque adulte, coche « Utilisateur EcoleDirecte »
+(`COM_PERSONNELS.PE_AVECED`), fonctions (`TAB_FONCTIONS` / `ADM_FONCTION_PERSONNEL` — sans fonction,
+un personnel est invisible des familles dans la messagerie ED), établissements cochés et
+fonctionnalités autorisées (`COM_PERSONNELS_ED`, `PED_TYPE` = `ETAB` / `MODULE`, clé `ID_PERSO_ED`),
+notifications (`COM_PERSONNELS_PREFERENCE`, `PEP_TYPE` = `INT_*`), points d'attention calculés, et
+options des profils utilisateurs Charlemagne (`ADM_PROFIL`, dont `EcoleD_LoginPass`). Libellés des
+codes rapprochés du support de formation Aplim « CED4 – Ecole Directe » (§3.1, §7.3) ; un code inconnu
+est renvoyé tel quel. Les enseignants (`PE_TYPE = 'prof'`) héritent de leurs droits par leur
+catégorie : pas de point d'attention pour eux. Hors export : case « Activer les notifications
+EcoleDirecte » de Charlemagne Outils, profil administrateur de la console ED.
+Tests : `tests/test_droits_ecoledirecte.py` (données synthétiques).
+
 ## Règles non négociables
 - Jamais de concaténation de chaînes SQL — requêtes paramétrées uniquement (`sqlite3` avec `?`)
 - Jamais d'identifiants en dur dans le code — variables d'environnement / config uniquement
@@ -132,6 +146,7 @@ charlemagne-mcp/
 ├── mcp_server.py                        # serveur MCP stdio - tools declares ici
 ├── tools/
 │   ├── facturation.py                   # solde_eleve
+│   ├── personnels.py                    # liste_personnels, droits_ecoledirecte_personnels
 │   ├── audit_facturation.py             # audit_de_facturation (regles : CHARLEMAGNE_REGLES_FACTURATION)
 │   └── comparaison.py                   # comparer_exports (archives : CHARLEMAGNE_ARCHIVES_DIR)
 ├── db/
