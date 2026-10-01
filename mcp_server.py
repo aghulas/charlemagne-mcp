@@ -20,7 +20,8 @@ import argparse
 from mcp.server.mcpserver import MCPServer
 
 from db.connection import get_connection
-from tools import audit_facturation, comparaison, eleves, facturation, famille, personnels, responsables
+from tools import (audit_facturation, comparaison, eleves, facturation, famille, historique_mails,
+                   personnels, responsables)
 
 INSTRUCTIONS = (
     "Acces en lecture seule aux donnees de gestion Charlemagne, "
@@ -234,6 +235,32 @@ def register_tools(server: MCPServer) -> None:
         conn = get_connection()
         try:
             return famille.fiche_famille(conn, id_eleve=id_eleve, id_foyer=id_foyer, validee=validee)
+        except ValueError as exc:
+            return {"error": str(exc)}
+        finally:
+            conn.close()
+
+    @server.tool(
+        description=(
+            "Historique des mails envoyes depuis Charlemagne (messagerie Charlemagne, pas "
+            "EcoleDirecte), du plus recent au plus ancien : date et heure, objet, module, "
+            "utilisateur, nombre et type de destinataires, extrait du texte. Filtres : recherche "
+            "(texte dans l'objet ou le corps, ex. '#LOGIN' pour les envois d'identifiants), "
+            "destinataire (nom ou adresse partiels : a qui ce parent a-t-il ete ecrit ?), "
+            "depuis/jusqu_a (AAAA-MM-JJ). id_histo : detail d'un envoi (corps complet en texte, "
+            "tous les destinataires avec nom, adresse et type). Ne dit PAS si un mail a ete "
+            "delivre, rejete ou bloque par la liste noire : ce statut n'est pas exporte."
+        )
+    )
+    def historique_mails_charlemagne(recherche: str | None = None, destinataire: str | None = None,
+                                     depuis: str | None = None, jusqu_a: str | None = None,
+                                     id_histo: str | None = None, limite: int = 50) -> dict:
+        """Mails envoyes depuis Charlemagne, filtrables, ou detail d'un envoi."""
+        conn = get_connection()
+        try:
+            return historique_mails.historique_mails(conn, recherche=recherche, destinataire=destinataire,
+                                                     depuis=depuis, jusqu_a=jusqu_a, id_histo=id_histo,
+                                                     limite=limite)
         except ValueError as exc:
             return {"error": str(exc)}
         finally:

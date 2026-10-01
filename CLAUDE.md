@@ -139,6 +139,25 @@ catégorie : pas de point d'attention pour eux, et renvoyés en résumé sauf `d
 EcoleDirecte » de Charlemagne Outils, profil administrateur de la console ED.
 Tests : `tests/test_droits_ecoledirecte.py` (données synthétiques).
 
+## Historique des mails envoyés (fait, 01/10/2026)
+`historique_mails_charlemagne(recherche, destinataire, depuis, jusqu_a, id_histo, limite)`
+(`tools/historique_mails.py`) : mails envoyés depuis Charlemagne (`COM_HISTORIQUE_MAILS`, une ligne
+par envoi), du plus récent au plus ancien. Format de la table, relevé sur l'export réel :
+- `DATE_ENVOI` en AAAAMMJJ, sans heure ; l'heure se lit dans `NOM_CAMPAGNE`
+  (`<etab>_<AAAAMMJJHHMMSSmmm>_<n>`) ;
+- trois listes **parallèles** séparées par « ; » (parfois avec un « ; » final) : `LISTE_CLIENTS`
+  (« NOM Prénom(Perso) » — type d'adresse entre parenthèses), `LISTE_MAILS`, `LISTE_TYPES`
+  (famille, prof) ;
+- `CORPS` en HTML, avec les variables de publipostage non résolues (#SITE, #LOGIN, #PASS) ; le renvoi
+  des codes depuis la fiche famille (« renvoyer par e-mail ») produit un message automatique, sans ces
+  variables ;
+- `IDPERSONNEL` = fiche adulte liée à l'utilisateur Charlemagne qui a envoyé (0 si aucune) — ce n'est
+  pas forcément la personne physique derrière le poste ;
+- **aucun statut de remise** : la liste noire des adresses en erreur existe dans Charlemagne mais n'est
+  pas exportée.
+Le filtre `destinataire` revérifie la correspondance entrée par entrée (un LIKE sur la liste brute
+peut chevaucher deux adresses). Tests : `tests/test_historique_mails.py` (données synthétiques).
+
 ## Règles non négociables
 - Jamais de concaténation de chaînes SQL — requêtes paramétrées uniquement (`sqlite3` avec `?`)
 - Jamais d'identifiants en dur dans le code — variables d'environnement / config uniquement
@@ -153,7 +172,8 @@ charlemagne-mcp/
 │   ├── facturation.py                   # solde_eleve
 │   ├── personnels.py                    # liste_personnels, droits_ecoledirecte_personnels
 │   ├── audit_facturation.py             # audit_de_facturation (regles : CHARLEMAGNE_REGLES_FACTURATION)
-│   └── comparaison.py                   # comparer_exports (archives : CHARLEMAGNE_ARCHIVES_DIR)
+│   ├── comparaison.py                   # comparer_exports (archives : CHARLEMAGNE_ARCHIVES_DIR)
+│   └── historique_mails.py              # historique_mails_charlemagne (COM_HISTORIQUE_MAILS)
 ├── db/
 │   └── connection.py                    # connexion SQLite lecture seule (CHARLEMAGNE_DB ou defaut)
 ├── loader/
