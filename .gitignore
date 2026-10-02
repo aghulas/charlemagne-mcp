@@ -10,3 +10,5 @@ data/
 *.csv
 logs/
 .pytest_cache/
+*.env
+manifest.txt
