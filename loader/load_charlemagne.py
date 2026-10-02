@@ -19,12 +19,16 @@ d'export partiel. Ici :
   une suppression + un ajout : ces tables sont donc *remplacees* (les lignes
   absentes de l'export sont supprimees), sinon PA_SUIVI_CONSOMMATEUR garderait
   l'ancien et le nouveau forfait d'un eleve.
-- Upsert par cle (INSERT OR REPLACE) pour les autres tables : jamais de vidage
-  complet, les lignes absentes de l'export sont conservees (export partiel).
-  Exceptions, remplacees elles aussi : les tables de preparation de facturation
-  (SNAPSHOT_TABLES), regenerees a chaque preparation dans Charlemagne, et toute
-  table dont le CSV est present mais vide (la table est reellement vide dans
-  Charlemagne : ex. FAC_GESTION_LIGNE apres validation).
+- Upsert par cle (INSERT OR REPLACE) pour les autres tables, puis **suppression
+  des lignes absentes de l'export** (depuis le 02/10/2026) : chaque export du
+  flux « un clic » est complet (614 tables), une ligne absente a donc ete
+  supprimee dans Charlemagne (piece a verser retiree, document retire de la
+  GED, ligne manuelle abandonnee...) et doit disparaitre de la base - avant,
+  elle restait en fantome. Le rapport continue de les lister. La seule
+  protection contre un export partiel : une table dont le CSV est ABSENT de
+  l'export n'est pas touchee. L'option --conserver retablit l'ancien
+  comportement (lignes absentes conservees) pour un export que l'on sait
+  partiel.
 - Un CSV vide (en-tete seul) cree quand meme la table : les tools ont besoin
   de la structure pour repondre proprement (« aucune preparation en cours »
   plutot que « no such table »).
@@ -88,7 +92,7 @@ COMPOSITE_KEYS = {
 }
 
 # Tables regenerees integralement par Charlemagne a chaque preparation de
-# facturation : une ligne absente de l'export n'existe plus, on la supprime.
+# facturation : remplacees meme avec --conserver.
 SNAPSHOT_TABLES = {
     "FAC_GESTION_ELEVE",
     "FAC_GESTION_FAMILLE",
@@ -203,6 +207,11 @@ def upsert_table(conn: sqlite3.Connection, table: str, key_cols: list, df: pd.Da
     l'export sont supprimees (tables sans identite stable, snapshots, CSV vide)."""
     cols = [c for c in df.columns if c != ROWKEY_COL]
     df = df.copy()
+    # Une valeur vide dans une colonne cle est stockee '' et non NULL : en SQLite deux NULL
+    # ne sont jamais egaux dans une cle primaire, la ligne serait reinseree a chaque export
+    # (vu sur COM_PREFERENCES, PREF_TYPE2 vide sur 2 lignes).
+    for c in key_cols:
+        df[c] = df[c].fillna("")
     df[ROWHASH_COL] = compute_rowhash(df, cols)
 
     cur = conn.cursor()
@@ -255,7 +264,7 @@ def print_report(reports: list, skipped_no_header: list, rowkey_tables: list, em
     print(f"  ~ {total_changed} lignes modifiees")
     print(f"  = {total_unchanged} lignes inchangees")
     print(f"  - {total_removed} lignes en base absentes de cet export "
-          f"({total_deleted} supprimees : tables remplacees ; {total_removed - total_deleted} conservees)")
+          f"({total_deleted} supprimees ; {total_removed - total_deleted} conservees)")
 
     moved = [r for r in reports if r.added or r.changed or r.removed]
     if moved:
@@ -292,6 +301,11 @@ def main() -> int:
         default="data/administration_consolidee.db",
         help="Chemin de la base SQLite consolidee (par defaut data/administration_consolidee.db)",
     )
+    parser.add_argument(
+        "--conserver",
+        action="store_true",
+        help="Export partiel : conserver les lignes en base absentes de l'export (par defaut elles sont supprimees)",
+    )
     args = parser.parse_args()
 
     csv_dir = Path(args.csv_dir)
@@ -315,7 +329,7 @@ def main() -> int:
             continue
 
         key_cols = resolve_key_cols(table, df)
-        replace = table in SNAPSHOT_TABLES or df.empty
+        replace = not args.conserver or table in SNAPSHOT_TABLES or df.empty
         # NB : on ne rejette pas sur la seule presence de valeurs nulles dans
         # les colonnes cle (ex. COM_PREFERENCES : cle (PREF_TYPE1, PREF_TYPE2)
         # fiable - 0 doublon - mais 2 lignes avec PREF_TYPE2 null). pandas

@@ -44,8 +44,16 @@ Trois étapes distinctes, à ne pas fusionner (cf. `Plan_MCP_Charlemagne.md`, Ph
      `FAC_COMPTA_GENERAL`, `COM_PIECE_RECU`, `FAC_HISTO_ELEVE` — et l'audit, la fiche famille et la
      comparaison d'exports ne fonctionnaient plus.
    - Un CSV vide (en-tête seul) crée la table, ou la vide si elle avait des lignes : `FAC_GESTION_*`
-     redevient vide après validation. Les tables de préparation (`SNAPSHOT_TABLES`) sont remplacées,
-     jamais cumulées. Si la clé d'une table en base change, la table est reconstruite.
+     redevient vide après validation. Si la clé d'une table en base change, la table est reconstruite.
+   - **Réplication complète (02/10/2026, soir)** : les lignes en base absentes de l'export sont
+     désormais **supprimées** (le rapport les liste toujours). Le flux « un clic » produit toujours un
+     export complet, donc une ligne absente a été supprimée dans Charlemagne — constaté avec la pièce
+     à verser retirée d'une fiche responsable : `COM_PIECE_RECU` passe à « Non Reçue » et l'entrée
+     `ADM_GED_INDEX` du document disparaît ; avant, elle restait en fantôme. Seule protection : une
+     table dont le CSV est absent de l'export n'est pas touchée ; `--conserver` rétablit l'ancien
+     comportement pour un export que l'on sait partiel. Une valeur vide dans une colonne clé est
+     stockée `''` (deux NULL ne sont jamais égaux dans une clé SQLite : la ligne était réinsérée à
+     chaque export — `COM_PREFERENCES`).
    - Aucun DDL requis : structure déduite des en-têtes CSV (colonnes `TEXT`).
    - Sur le Mac, c'est `~/Charlemagne/automatisation/charlemagne_load_inbox.sh` (launchd) qui appelle ce
      loader. Depuis la VM Cowork (dossier monté), SQLite échoue en écriture (« disk I/O error ») :
@@ -135,6 +143,17 @@ facturation reelle, a garder en tete) :
 - le code de frequence reste « TARIF » meme avec un echeancier mensuel : lire GF_ECHE_PRIXn.
 Tests : `tests/test_comparaison.py`, `tests/test_audit_facturation.py` (donnees synthetiques).
 Bout en bout : `scripts/smoke_test_audit.py` (vraie base, ne rien commiter de sa sortie).
+
+## Pièces à verser : suppression côté Charlemagne (constaté le 02/10/2026)
+Une pièce déposée par une famille (ou pour elle, via `ed_admin_deposer_piece`) et récupérée par
+Charlemagne est « verrouillée » dans EcoleDirecte : aucun écran ni endpoint EcoleDirecte ne permet de
+la télécharger, remplacer ou supprimer, et le fichier est chiffré sur le serveur Aplim. La suppression
+se fait dans Charlemagne Administratif (fiche du responsable/élève, pièces du dossier) : effet
+**immédiat** dans EcoleDirecte (`ed_admin_pieces_etat` → non déposée, déverrouillée, la famille peut
+redéposer), et à l'export suivant `COM_PIECE_RECU` passe à « Non Reçue » et l'entrée GED disparaît.
+Pour contrôler le contenu d'une pièce (année scolaire, nature) : seules les pièces déposées par l'école
+(chaîne scans → EcoleDirecte) ont un PDF source lisible, dans `~/Charlemagne/plan_depot_scans.json`
+→ SharePoint du secrétariat ; les scans n'ont pas de couche texte (lecture visuelle).
 
 ## Suivi de la facturation en cours d'annee (fait, 02/10/2026)
 Charlemagne ne recalcule pas une facture validee : apres la facturation initiale, les changements

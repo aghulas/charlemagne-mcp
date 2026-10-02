@@ -19,8 +19,8 @@ def ecrire_csv(dossier: Path, table: str, lignes: list[str]) -> None:
     (dossier / f"{table}.csv").write_text("\n".join(lignes) + "\n", encoding="utf-16-le")
 
 
-def charger(dossier: Path, db: Path, monkeypatch, capsys) -> str:
-    monkeypatch.setattr(sys, "argv", ["load", str(dossier), "--db", str(db)])
+def charger(dossier: Path, db: Path, monkeypatch, capsys, *options: str) -> str:
+    monkeypatch.setattr(sys, "argv", ["load", str(dossier), "--db", str(db), *options])
     assert L.main() == 0
     return capsys.readouterr().out
 
@@ -33,16 +33,38 @@ def lignes(db: Path, sql: str) -> list:
         conn.close()
 
 
-def test_upsert_par_cle_conserve_les_lignes_absentes(tmp_path, monkeypatch, capsys):
+def test_upsert_par_cle_supprime_les_lignes_absentes(tmp_path, monkeypatch, capsys):
+    csv, db = tmp_path / "csv", tmp_path / "b.db"
+    csv.mkdir()
+    ecrire_csv(csv, "COM_TEST", ["IDTEST,LIB", "1,a", "2,b"])
+    ecrire_csv(csv, "COM_AUTRE", ["IDAUTRE,LIB", "9,z"])
+    charger(csv, db, monkeypatch, capsys)
+    # export complet : la ligne 2 a ete supprimee dans Charlemagne -> supprimee en base
+    ecrire_csv(csv, "COM_TEST", ["IDTEST,LIB", "1,a2", "3,c"])
+    out = charger(csv, db, monkeypatch, capsys)
+    assert sorted(lignes(db, "SELECT IDTEST, LIB FROM COM_TEST")) == [("1", "a2"), ("3", "c")]
+    assert "+ 1 lignes ajoutees" in out and "~ 1 lignes modifiees" in out and "1 supprimees" in out
+    # une table absente de l'export n'est jamais touchee
+    (csv / "COM_AUTRE.csv").unlink()
+    charger(csv, db, monkeypatch, capsys)
+    assert lignes(db, "SELECT COUNT(*) FROM COM_AUTRE") == [(1,)]
+
+
+def test_option_conserver_pour_un_export_partiel(tmp_path, monkeypatch, capsys):
     csv, db = tmp_path / "csv", tmp_path / "b.db"
     csv.mkdir()
     ecrire_csv(csv, "COM_TEST", ["IDTEST,LIB", "1,a", "2,b"])
     charger(csv, db, monkeypatch, capsys)
     ecrire_csv(csv, "COM_TEST", ["IDTEST,LIB", "1,a2", "3,c"])
-    out = charger(csv, db, monkeypatch, capsys)
+    out = charger(csv, db, monkeypatch, capsys, "--conserver")
     assert sorted(lignes(db, "SELECT IDTEST, LIB FROM COM_TEST")) == [("1", "a2"), ("2", "b"), ("3", "c")]
-    assert "+ 1 lignes ajoutees" in out and "~ 1 lignes modifiees" in out
     assert "1 conservees" in out
+    # les tables de preparation sont remplacees meme avec --conserver
+    ecrire_csv(csv, "FAC_GESTION_LIGNE", ["IDGESTIONLIGNE,GL_CODE_LIGNE", "1,CONTRIB"])
+    charger(csv, db, monkeypatch, capsys, "--conserver")
+    ecrire_csv(csv, "FAC_GESTION_LIGNE", ["IDGESTIONLIGNE,GL_CODE_LIGNE", "7,CONTRIB"])
+    charger(csv, db, monkeypatch, capsys, "--conserver")
+    assert lignes(db, "SELECT IDGESTIONLIGNE FROM FAC_GESTION_LIGNE") == [("7",)]
 
 
 def test_cle_de_secours_pour_table_a_doublons(tmp_path, monkeypatch, capsys):
@@ -105,6 +127,16 @@ def test_reconstruction_si_la_cle_change(tmp_path, monkeypatch, capsys):
     assert "reconstruite" in out
     assert lignes(db, "SELECT COUNT(*) FROM COM_PIECE_RECU") == [(3,)]
     assert L.existing_key_cols(sqlite3.connect(db), "COM_PIECE_RECU") == ["ID_LIEN_PIECE_PERSONNE", "ID_LIEN_PIECE_LISTE"]
+
+
+def test_cle_avec_valeur_vide_stable(tmp_path, monkeypatch, capsys):
+    csv, db = tmp_path / "csv", tmp_path / "b.db"
+    csv.mkdir()
+    ecrire_csv(csv, "COM_PREFERENCES", ["PREF_TYPE1,PREF_TYPE2,PREF_TEXTE", "A,x,1", "B,,2"])
+    charger(csv, db, monkeypatch, capsys)
+    out = charger(csv, db, monkeypatch, capsys)
+    assert "+ 0 lignes ajoutees" in out and "= 2 lignes inchangees" in out and "0 supprimees" in out
+    assert lignes(db, "SELECT COUNT(*) FROM COM_PREFERENCES") == [(2,)]
 
 
 def test_fichier_sans_en_tete_ignore(tmp_path, monkeypatch, capsys):
