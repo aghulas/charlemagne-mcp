@@ -47,5 +47,13 @@
     "info_foyer_separe": "Foyer S"
   },
   "echeances": {"mode_prelevement": "Prélèvement", "nb_prelevement": 10},
-  "solde_a_signaler": 100
+  "solde_a_signaler": 100,
+  "prorata": {"premier_mois": 9, "nb_mois": 10},
+  "pieces_justificatifs": [
+    {"piece": "LIBELLE PIECE CERTIFICAT EXTERIEUR", "info_responsable": "Justificatif Fraterie", "valeur": 1},
+    {"piece": "LIBELLE PIECE JUSTIFICATIF APEL", "info_responsable": "Justificatif APEL", "valeur": 1},
+    {"piece": "LIBELLE PIECE ATTESTATION EMPLOYEUR", "quotient2_parmi": ["CODE_QUOTIENT2_SECTEUR"]}
+  ],
+  "_prorata": "regularisations_a_preparer : annee facturee a partir de premier_mois sur nb_mois, tout mois commence est du",
+  "_pieces_justificatifs": "piece (libelle INS_PIECES_DOSSIER) recue dans Charlemagne -> information complementaire responsable ou quotient 2 attendus"
 }

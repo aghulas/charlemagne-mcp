@@ -5,35 +5,44 @@ activites, informations complementaires, liens eleve-responsable) et les regles
 tarifaires de l'etablissement, puis controle les reductions, l'APEL, les echeances
 et, pour une facturation validee, la numerotation et l'equilibre comptable.
 
+En cours d'annee, la facturation validee est le cumul de toutes les validations
+(facturation initiale + factures complementaires / avoirs manuels) : les lignes
+sont additionnees par eleve et par code, l'echeancier lu sur la derniere facture
+de chaque responsable (dont le solde repris n'est pas une dette), et une ligne
+facturee au prorata (k/10 du tarif) est signalee en information, pas en anomalie.
+
 Le module est generique : tarifs, codes de lignes et regles viennent d'un fichier
 JSON (variable d'environnement CHARLEMAGNE_REGLES_FACTURATION), jamais du code.
-Voir docs/regles_facturation.exemple.json pour le format.
+Voir docs/regles_facturation.exemple.json pour le format. Le calcul des lignes
+attendues est dans tools/regles_facturation.py (partage avec le suivi en cours
+d'annee).
 
 Lecture seule. Aucune donnee bancaire n'est renvoyee.
 """
 
-import json
-import os
 from collections import Counter, defaultdict
-from pathlib import Path
+
+from tools.regles_facturation import (
+    Contexte,
+    charger_regles,  # noqa: F401 - reexporte pour mcp_server
+    colonne,
+    indice_mois,
+    mois_restants,
+    prorata_regles,
+)
+from tools.regles_facturation import num as _num
 
 MAX_PAR_RUBRIQUE = 40
 
 
-def charger_regles(chemin: str | None = None) -> dict:
-    p = chemin or os.environ.get("CHARLEMAGNE_REGLES_FACTURATION")
-    if not p:
-        raise ValueError("Aucun fichier de regles : definir CHARLEMAGNE_REGLES_FACTURATION.")
-    if not Path(p).exists():
-        raise ValueError(f"Fichier de regles introuvable : {p}")
-    return json.loads(Path(p).read_text(encoding="utf-8"))
-
-
-def _num(v) -> float:
-    try:
-        return float(v) if v not in (None, "") else 0.0
-    except ValueError:
-        return 0.0
+def _prorata(facture: float, attendu: float, nb: int) -> int | None:
+    """k si facture == attendu * k / nb (ligne facturee au prorata), sinon None."""
+    if not attendu:
+        return None
+    for k in range(1, nb + 1):
+        if abs(facture - attendu * k / nb) <= .02:
+            return k
+    return None
 
 
 def audit_facturation(conn, regles: dict, validee: bool = False) -> dict:
@@ -43,49 +52,23 @@ def audit_facturation(conn, regles: dict, validee: bool = False) -> dict:
     if not q(f"SELECT COUNT(*) FROM {L}")[0][0]:
         raise ValueError(f"{L} est vide : " + ("aucune facturation validee." if validee
                          else "aucune preparation en cours (deja validee ? relancer avec validee=True)."))
-    rentree = regles.get("date_rentree", "00000000")
-    el = {int(r[0]): tuple(r[1:]) for r in q(
-        """SELECT e.IDELEVE, e.EL_NOM1, e.EL_PRENOM1, c.CL_LIBELLE, e.EL_IDREGIME,
-                  e.EL_REPASMIDI1||e.EL_REPASMIDI2||e.EL_REPASMIDI4||e.EL_REPASMIDI5
-           FROM COM_ELEVES e JOIN COM_CLASSES c ON c.IDCLASSE = e.EL_IDCLASSE
-           WHERE e.EL_IDCLASSE <> '' AND (COALESCE(e.EL_DATE_SORTIE,'') = '' OR e.EL_DATE_SORTIE > ?)""", (rentree,))}
-    nm = lambda i: f"{el[i][0]} {el[i][1]} ({el[i][2]})" if i in el else f"eleve {i}"
-    rn = {int(r[0]): f"{r[1]} {r[2]}" for r in q("SELECT IDRESPONSABLE, RE_NOM1, RE_PRENOM1 FROM COM_RESPONSABLES")}
+    ctx = Contexte(conn, regles)
+    el, pay, princ, nm, rn = ctx.el, ctx.pay, ctx.princ, ctx.nom, ctx.rn
+    _, nb_mois = prorata_regles(regles)
     A = defaultdict(list)
     alerte = lambda rub, **d: A[rub].append(d)
-    GL = [(int(r[0] or 0), int(r[1] or 0), r[2], _num(r[3]), _num(r[4]), _num(r[5]), r[6], r[7]) for r in q(
-        f"""SELECT IDELEVE, IDRESPONSABLE, {pl}CODE_LIGNE, {pl}TOTAL, {pl}REMISE_MT_FAMILLE, {pl}REMISE_MT_ELEVE,
-                   {pl}REMISE_CODE_FAMILLE, {pl}REMISE_CODE_ELEVE FROM {L}""")]
-
-    pay, princ = defaultdict(dict), {}
-    for eid, rid, typ, v, pct in q("SELECT IDELEVE, IDRESPONSABLE, LER_TYPE_RESP, LER_VERSQUI, LER_POURCENTAGE FROM COM_LIENER"):
-        eid, rid = int(eid), int(rid)
-        if eid not in el:
-            continue
-        if str(typ) == "1":
-            princ[eid] = rid
-        if str(v) == "1" and _num(pct):
-            pay[eid][rid] = _num(pct)
-    icr = defaultdict(dict)
-    for rid, lib, v in q("""SELECT s.IDRESPONSABLE, i.ICR_LIBELLE, COALESCE(s.ICRS_SAISIE_NBRE, s.ICRS_SAISIE_TEXTE)
-                            FROM ADM_ICR_SAISIE s JOIN ADM_ICR i ON i.ID_ICR = s.ID_ICR"""):
-        icr[int(rid)][str(lib).lower()] = str(v).replace(".0", "")
-    info = lambda rid, debut: next((v for k, v in icr[rid].items() if k.startswith(debut.lower())), None)
-    q2 = {int(r[0]): r[1] for r in q("SELECT IDRESPONSABLE, RE_QUOTIENT2 FROM COM_RESPONSABLES WHERE COALESCE(RE_QUOTIENT2,'') <> ''")}
-    act = defaultdict(dict)
-    for code, idp, *j in q("SELECT SI_CODE, IDPASSANT, JOUR1, JOUR2, JOUR4, JOUR5 FROM PA_SUIVI_CONSOMMATEUR"):
-        act[int(idp)][code] = sum(1 for x in j if str(x) == "1")
-    def ice(code):
-        return {int(r[0]): _num(r[1]) for r in q("""SELECT s.IDELEVE, COALESCE(s.ICES_SAISIE_NBRE, s.ICES_SAISIE_TEXTE)
-            FROM ADM_ICE_SAISIE s JOIN ADM_ICE i ON i.ID_ICE = s.ID_ICE WHERE i.ICE_CODE = ?""", (code,))}
-    perso_codes = set(regles.get("codes_personnel", []))
-    est_perso = lambda i: any(q2.get(r) in perso_codes for r in pay[i])
+    sel_val = colonne(conn, L, "IDVALIDATION", defaut="'1'")
+    sel_lib = colonne(conn, L, f"{pl}LIBELLE_LIGNE")
+    GL = [(int(r[0] or 0), int(r[1] or 0), r[2], _num(r[3]), _num(r[4]), _num(r[5]), r[6], r[7], int(r[8] or 1), r[9])
+          for r in q(f"""SELECT IDELEVE, IDRESPONSABLE, {pl}CODE_LIGNE, {pl}TOTAL, {pl}REMISE_MT_FAMILLE, {pl}REMISE_MT_ELEVE,
+                                {pl}REMISE_CODE_FAMILLE, {pl}REMISE_CODE_ELEVE, {sel_val}, {sel_lib} FROM {L}""")]
+    premiere_validation = min((g[8] for g in GL), default=1)
 
     # 1. perimetre et payeurs
     factures = {g[0] for g in GL if g[0]}
     for i in el:
         if i not in factures:
-            alerte("eleve_actif_non_facture", eleve=nm(i))
+            alerte("eleve_actif_non_facture", eleve=nm(i), entre_le=ctx.entree(i) or None)
         s = sum(pay[i].values())
         if abs(s - 100) > .01:
             alerte("repartition_payeurs_differente_de_100", eleve=nm(i), total=s)
@@ -98,54 +81,35 @@ def audit_facturation(conn, regles: dict, validee: bool = False) -> dict:
         if t:
             alerte("eleve_facture_non_actif", id_eleve=i, montant=round(t, 2))
 
-    # 2. lignes par eleve
+    # 2. lignes par eleve (cumul de toutes les validations)
     tot, part = defaultdict(lambda: defaultdict(float)), defaultdict(lambda: defaultdict(float))
     for eid, rid, code, t, *_ in GL:
         if eid in el:
             tot[eid][code] += t
             part[(eid, code)][rid] += t
-    can = regles.get("cantine", {}); gar = regles.get("garderie", {})
-    ices = {x["code_ice"]: ice(x["code_ice"]) for x in regles.get("informations_complementaires", [])}
-    controles = set()
+    for eid, rid, code, t, rf, re_, cf, ce, v, lib in GL:
+        if v != premiere_validation and (t or rf or re_):
+            alerte("ligne_de_regularisation", eleve=nm(eid) if eid else "(ligne famille)", responsable=rn.get(rid),
+                   validation=v, ligne=code, libelle=lib, montant=round(t, 2))
+    controles = ctx.prefixes_controles()
     contrib = defaultdict(Counter)
-    for i, (n, p, cl, reg, midi) in el.items():
-        g, a, nb = tot[i], act.get(i, {}), str(midi).count("1")
-        att = {}
-        if can:
-            if str(reg) == str(can.get("regime_panier")) and nb:
-                att[can["ligne_panier"].format(n=nb)] = can["tarifs_panier"][str(nb)]
-            elif nb:
-                att[can["ligne"].format(n=nb)] = can["tarifs"][str(nb)]
-            if str(reg) == str(can.get("regime_externe")) and nb:
-                alerte("externe_avec_jours_de_cantine", eleve=nm(i))
-            if str(reg) not in (str(can.get("regime_externe")), str(can.get("regime_panier"))) and not nb:
-                alerte("demi_pensionnaire_sans_jour", eleve=nm(i))
-            controles |= {can["ligne"].split("{")[0], can["ligne_panier"].split("{")[0]}
-        if gar:
-            ne, nmat = a.get(gar["activite_etude"], 0), a.get(gar["activite_matin"], 0)
-            if ne == gar.get("jours_forfait", 4) and nmat and gar.get("ligne_forfait"):
-                att[gar["ligne_forfait"]] = gar["tarif_forfait"]
-            else:
-                if ne:
-                    att[gar["ligne_etude"].format(n=ne)] = gar["tarifs_etude"][str(ne)]
-                if nmat:
-                    att[gar["ligne_matin"]] = gar["tarif_matin"]
-            controles |= {gar["ligne_etude"].split("{")[0], gar["ligne_matin"], gar.get("ligne_forfait", "")}
-        for x in regles.get("activites", []):
-            if a.get(x["activite"]):
-                att[x["ligne"]] = x["tarif"]
-            controles.add(x["ligne"])
-        for x in regles.get("informations_complementaires", []):
-            if ices[x["code_ice"]].get(i) == x.get("valeur", 1):
-                att[x["ligne"]] = x["tarif"]
-            controles.add(x["ligne"])
-        controles.discard("")
+    for i in el:
+        g = tot[i]
+        att, anomalies = ctx.attendu_eleve(i)
+        for a in anomalies:
+            alerte(a, eleve=nm(i))
         for code in set(att) | {c for c in g if any(c.startswith(k) for k in controles)}:
-            if abs(g.get(code, 0) - att.get(code, 0)) > .01:
-                alerte("ligne_incorrecte", eleve=nm(i), ligne=code, facture=round(g.get(code, 0), 2), attendu=att.get(code, 0))
+            f, a = g.get(code, 0), att.get(code, 0)
+            if abs(f - a) > .01:
+                k = _prorata(f, a, nb_mois)
+                if k:
+                    alerte("ligne_au_prorata", eleve=nm(i), ligne=code, facture=round(f, 2), tarif_annuel=a,
+                           prorata=f"{k}/{nb_mois}")
+                else:
+                    alerte("ligne_incorrecte", eleve=nm(i), ligne=code, facture=round(f, 2), attendu=a)
         rg = regles.get("lignes_regroupement_contribution", [])
         if rg:
-            contrib[cl][round(sum(v for c, v in g.items() if c in rg), 2)] += 1
+            contrib[ctx.classe(i)][round(sum(v for c, v in g.items() if c in rg), 2)] += 1
     for cl, c in contrib.items():
         if len(c) > 1:
             alerte("contribution_differente_dans_une_classe", classe=cl, montants=dict(c))
@@ -153,26 +117,19 @@ def audit_facturation(conn, regles: dict, validee: bool = False) -> dict:
     # 3. fratrie et remises
     fr_r = regles.get("fratrie")
     if fr_r:
-        enf = defaultdict(set)
-        for e, r in princ.items():
-            enf[r].add(e)
-        mt = {int(k): v for k, v in fr_r["montants"].items()}
         for i in el:
             fr = sum(v for c, v in tot[i].items() if c.startswith(fr_r["prefixe_lignes"]))
-            if est_perso(i):
+            f_att = ctx.fratrie_attendue(i)
+            if f_att["personnel"]:
                 if fr and not fr_r.get("cumul_avec_personnel", False):
                     alerte("fratrie_cumulee_avec_remise_personnel", eleve=nm(i), fratrie=round(fr, 2))
                 continue
-            r = princ.get(i); n = len(enf[r])
-            ext = int(_num(info(r, fr_r["info_nb_exterieurs"]))); j = info(r, fr_r["info_justificatif"]) == "1"
-            total = n + (ext if j else 0)
-            seuil = max((k for k in mt if total >= k and k >= 3), default=None)
-            attendu = mt[seuil] if seuil else (mt.get(2, 0) if n == 2 else 0)
+            attendu = f_att["montant"]
             if abs(fr - attendu) > .02:
                 alerte("reduction_fratrie_hors_regle", eleve=nm(i), facture=round(fr, 2), attendu=attendu,
-                       a_l_ecole=n, exterieurs=ext, justifie=j)
-            if ext and not j:
-                alerte("enfants_exterieurs_sans_justificatif", eleve=nm(i), responsable=rn.get(r))
+                       a_l_ecole=f_att["a_l_ecole"], exterieurs=f_att["exterieurs"], justifie=f_att["justifie"])
+            if f_att["exterieurs"] and not f_att["justifie"]:
+                alerte("enfants_exterieurs_sans_justificatif", eleve=nm(i), responsable=rn.get(princ.get(i)))
             if len(pay[i]) > 1 and attendu:
                 parts = defaultdict(float)
                 for (eid, code), d in part.items():
@@ -184,46 +141,47 @@ def audit_facturation(conn, regles: dict, validee: bool = False) -> dict:
                         alerte("fratrie_mal_repartie_entre_parents", eleve=nm(i), responsable=rn.get(rid),
                                facture=round(parts.get(rid, 0), 2), attendu=round(attendu * pct / 100, 2))
     rem_eleve_ok = set(regles.get("remises_eleve_autorisees", []))
-    for eid, rid, code, t, rf, re_, cf, ce in GL:
-        if rf and cf and eid in el and not est_perso(eid):
+    for eid, rid, code, t, rf, re_, cf, ce, *_ in GL:
+        if rf and cf and eid in el and not ctx.est_perso(eid):
             alerte("remise_famille_sans_code_personnel", eleve=nm(eid), remise=cf)
         if re_ and ce not in rem_eleve_ok:
             alerte("remise_eleve_inattendue", eleve=nm(eid), ligne=code, remise=ce, montant=re_)
     for i in el:
-        if est_perso(i) and not any(g[0] == i and g[4] for g in GL):
+        if ctx.est_perso(i) and not any(g[0] == i and g[4] for g in GL):
             alerte("famille_du_personnel_sans_remise", eleve=nm(i))
 
-    # 4. APEL, soldes, echeances
+    # 4. APEL, soldes, echeances (derniere facture de chaque responsable)
     fcols = [r[1] for r in conn.execute(f"PRAGMA table_info({F})")]
-    FAM = {int(r[0]): dict(zip(fcols, r[1:])) for r in q(f"SELECT IDRESPONSABLE, * FROM {F}")}
+    ordre = " ORDER BY CAST(IDVALIDATION AS INTEGER)" if "IDVALIDATION" in fcols else ""
+    FAM = {int(r[0]): dict(zip(fcols, r[1:])) for r in q(f"SELECT IDRESPONSABLE, * FROM {F}{ordre}")}
+    # premiere facture de chaque responsable : son solde d'origine est le solde reporte de l'annee
+    # precedente ; sur une facture complementaire, ORI_SOLDE est le solde repris des factures
+    # precedentes (pas une dette)
+    FAM1 = {int(r[0]): dict(zip(fcols, r[1:])) for r in q(f"SELECT IDRESPONSABLE, * FROM {F}{ordre.replace('INTEGER)', 'INTEGER) DESC') if ordre else ''}")}
     ap_r = regles.get("apel")
     if ap_r:
-        foyer = {int(r[0]): r[1] for r in q("""SELECT r.IDRESPONSABLE, f.COT_APEL FROM COM_RESPONSABLES r
-                                               JOIN COM_FOYER f ON f.IDFOYER = r.IDFOYER""")}
         apel = defaultdict(float)
         for eid, rid, code, t, *_ in GL:
             if code == ap_r["ligne"]:
                 apel[rid] += t
         for rid in FAM:
-            v = foyer.get(rid)
-            att = ap_r["tarifs"].get(str(v), 0)
-            if v == ap_r.get("valeur_exterieur") and info(rid, ap_r["info_justificatif"]) == "1":
-                att = ap_r["tarif_exterieur_justifie"]
-            if ap_r.get("info_foyer_separe") and info(rid, ap_r["info_foyer_separe"]) == "1":
-                att = att / 2
+            att = ctx.apel_attendue(rid)
             if abs(apel.get(rid, 0) - att) > .01:
-                alerte("apel_incorrecte", responsable=rn.get(rid), foyer=v, facture=round(apel.get(rid, 0), 2), attendu=att)
-    mode = {int(r[0]): (r[1], bool((r[2] or "").strip())) for r in q("SELECT IDRESPONSABLE, RE_MODE_REGLEMENT, RE_IBAN FROM COM_RESPONSABLES")}
+                alerte("apel_incorrecte", responsable=rn.get(rid), foyer=ctx.foyer_apel.get(rid),
+                       facture=round(apel.get(rid, 0), 2), attendu=att)
     ech_r = regles.get("echeances", {})
     for rid, f in FAM.items():
         n = sum(1 for k in range(1, 13) if _num(f.get(f"{pf}ECHE_PRIX{k}")))
-        solde = _num(f.get(f"{pf}ORI_SOLDE"))
+        solde = _num(FAM1[rid].get(f"{pf}ORI_SOLDE"))
         if solde > regles.get("solde_a_signaler", 100):
             alerte("solde_reporte_important", responsable=rn.get(rid), solde=solde)
-        m, iban = mode.get(rid, (None, False))
+        m, iban = ctx.mode.get(rid, (None, False))
         if m == ech_r.get("mode_prelevement", "Prélèvement"):
-            if ech_r.get("nb_prelevement") and n != ech_r["nb_prelevement"]:
-                alerte("nombre_echeances_prelevement", responsable=rn.get(rid), echeances=n)
+            idx = indice_mois(f.get(f"{pf}DATE_FACTURE"), regles)
+            n_att = min(mois_restants(idx, regles) or ech_r.get("nb_prelevement", 0), ech_r.get("nb_prelevement", 99))
+            if n_att and n != n_att:
+                alerte("nombre_echeances_prelevement", responsable=rn.get(rid), echeances=n, attendu=n_att,
+                       facture_du=f.get(f"{pf}DATE_FACTURE"))
             if not iban:
                 alerte("prelevement_sans_iban", responsable=rn.get(rid))
 
@@ -243,14 +201,17 @@ def audit_facturation(conn, regles: dict, validee: bool = False) -> dict:
                                   "equilibree": abs((c - d) - cf) <= .05}
         if abs((c - d) - cf) > .05:
             alerte("comptabilite_desequilibree", produits_nets=round(c - d, 2), clients=round(cf, 2))
-        v = q("SELECT VA_NB_FACTURES, VA_NUMERO_DEBUT, VA_NUMERO_FIN, VA_DATE_HEURE FROM FAC_VALIDATION ORDER BY rowid DESC LIMIT 1")
-        if v:
-            resume["validation"] = dict(zip(("nb_factures", "numero_debut", "numero_fin", "date"), tuple(v[0])))
+        vs = q("""SELECT IDVALIDATION, VA_TYPE_FACTURE, VA_NB_FACTURES, VA_NUMERO_DEBUT, VA_NUMERO_FIN, VA_DATE_HEURE
+                  FROM FAC_VALIDATION ORDER BY CAST(IDVALIDATION AS INTEGER)""")
+        resume["validations"] = [dict(zip(("id", "type", "nb_factures", "numero_debut", "numero_fin", "date"), v)) for v in vs]
     return {
         "facturation": "validee" if validee else "preparation",
         "resume": resume,
         "nb_anomalies": {k: len(v) for k, v in A.items()},
         "anomalies": {k: v[:MAX_PAR_RUBRIQUE] for k, v in A.items()},
         "note": ("Donnees a la date du dernier export charge. Les lignes de reduction sont negatives par nature ; "
-                 "le forfait matin+soir remplace les lignes etude et garderie du matin."),
+                 "le forfait matin+soir remplace les lignes etude et garderie du matin. Pour une facturation validee, "
+                 "les montants sont le cumul de toutes les validations (initiale + complementaires) ; les rubriques "
+                 "ligne_de_regularisation et ligne_au_prorata sont informatives. Pour preparer une facture "
+                 "complementaire, voir regularisations_a_preparer."),
     }

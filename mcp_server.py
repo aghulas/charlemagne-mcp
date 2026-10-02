@@ -20,8 +20,17 @@ import argparse
 from mcp.server.mcpserver import MCPServer
 
 from db.connection import get_connection
-from tools import (audit_facturation, comparaison, eleves, facturation, famille, historique_mails,
-                   personnels, responsables)
+from tools import (
+    audit_facturation,
+    comparaison,
+    eleves,
+    facturation,
+    famille,
+    historique_mails,
+    personnels,
+    responsables,
+    suivi_facturation,
+)
 
 INSTRUCTIONS = (
     "Acces en lecture seule aux donnees de gestion Charlemagne, "
@@ -201,8 +210,10 @@ def register_tools(server: MCPServer) -> None:
             "repartition entre payeurs, cantine/etude/garderie/activites, reductions fratrie "
             "(regle, justificatifs, cumul avec le personnel, payeur non responsable principal), "
             "remises, APEL, echeances, soldes reportes ; pour une facturation validee, "
-            "numerotation et equilibre comptable. A lancer apres chaque nouvelle preparation, "
-            "avant de valider. N'expose aucune donnee bancaire."
+            "numerotation et equilibre comptable. En cours d'annee, la facturation validee est le "
+            "cumul de toutes les validations (initiale + factures complementaires) ; les lignes de "
+            "regularisation et les lignes au prorata sont signalees en information. A lancer apres "
+            "chaque nouvelle preparation, avant de valider. N'expose aucune donnee bancaire."
         )
     )
     def audit_de_facturation(validee: bool = False) -> dict:
@@ -217,14 +228,66 @@ def register_tools(server: MCPServer) -> None:
 
     @server.tool(
         description=(
+            "Suivi de la facturation en cours d'annee : compare, eleve par eleve, le cumul deja "
+            "facture (toutes validations : facturation initiale + factures complementaires) a ce que "
+            "donnent les donnees sources actuelles (jours de cantine, regime, etude, garderie, "
+            "activites, informations complementaires, fratrie et justificatifs, APEL) et propose les "
+            "lignes a saisir en facture complementaire manuelle dans Charlemagne : code de ligne, "
+            "quantite, prix plein et prix au prorata (tout mois commence est du, a partir de "
+            "date_effet - AAAA-MM-JJ, aujourd'hui par defaut), libelle, quote-part de chaque payeur, "
+            "sens (complement ou avoir). Couvre les forfaits modifies, les reductions (justificatifs "
+            "tardifs), les nouveaux eleves (contribution de la classe + forfaits), les departs (avoir "
+            "sur les mois suivant la sortie), l'APEL, la remise personnel absente, les lignes "
+            "manuelles deja saisies dans Charlemagne et non validees (avec un controle), et les "
+            "justificatifs recus dont l'information complementaire n'est pas encore saisie (a faire "
+            "avant de facturer). id_eleve : un seul eleve. Lecture seule, aucune donnee bancaire."
+        )
+    )
+    def regularisations_a_preparer(date_effet: str | None = None, id_eleve: str | None = None) -> dict:
+        """Regularisations a preparer (facture complementaire / avoir) d'apres les donnees sources."""
+        conn = get_connection()
+        try:
+            return suivi_facturation.regularisations_a_preparer(
+                conn, audit_facturation.charger_regles(), date_effet=date_effet, id_eleve=id_eleve)
+        except ValueError as exc:
+            return {"error": str(exc)}
+        finally:
+            conn.close()
+
+    @server.tool(
+        description=(
+            "Suivi des echeanciers famille par famille apres la facturation : factures de l'annee "
+            "(initiale, complementaires, avoirs : numero, date, montant, solde repris), echeances "
+            "passees et a venir, reste a prelever, et alertes : echeancier incoherent (somme des "
+            "echeances differente de facture + solde), mode de reglement modifie sur la fiche depuis "
+            "la facture (echeancier a reactualiser), prelevement sans IBAN, echeances irregulieres, "
+            "payeur ou repartition modifies depuis la facturation, enfant du payeur non facture. "
+            "Sans id_responsable, ne detaille que les familles avec alerte ou plusieurs factures. "
+            "Ne connait PAS le statut paye/impaye (aucun encaissement exporte). Aucune donnee bancaire."
+        )
+    )
+    def suivi_echeanciers(id_responsable: str | None = None) -> dict:
+        """Echeanciers, factures de l'annee et alertes de reglement par famille."""
+        conn = get_connection()
+        try:
+            return suivi_facturation.suivi_echeanciers(conn, audit_facturation.charger_regles(),
+                                                       id_responsable=id_responsable)
+        except ValueError as exc:
+            return {"error": str(exc)}
+        finally:
+            conn.close()
+
+    @server.tool(
+        description=(
             "Fiche famille complete en un appel, a partir d'un eleve (id_eleve = IDELEVE) ou d'un "
             "foyer (id_foyer = IDFOYER) : foyer (cotisation APEL Oui/Ext/Non), responsables (lien, "
             "responsable principal, payeur et pourcentage, mode de reglement, IBAN renseigne ou "
             "non, enfants a charge, quotients, informations complementaires - ex. Ext. scolarisee, "
             "Justificatif Fraterie), enfants (classe, regime, jours de cantine, activites, "
             "informations complementaires, remises), lignes facturees non nulles (preparation en "
-            "cours, sinon derniere facturation validee ; validee=True/False pour forcer) avec le "
-            "total par responsable, et pieces a verser recues ou non. A utiliser pour verifier une "
+            "cours, sinon cumul de toutes les factures validees de l'annee avec le detail par "
+            "facture et les echeances ; validee=True/False pour forcer) avec le total par "
+            "responsable, les lignes manuelles en attente de validation, et pieces a verser recues ou non. A utiliser pour verifier une "
             "famille apres une fiche forfaits, un certificat ou une facture APEL. Lecture seule, "
             "aucune coordonnee bancaire (seulement renseigne/vide)."
         )

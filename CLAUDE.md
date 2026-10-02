@@ -35,9 +35,21 @@ Trois étapes distinctes, à ne pas fusionner (cf. `Plan_MCP_Charlemagne.md`, Ph
    réel : 2e exécution → 0 ajout/0 modification confirmés (idempotence validée).
    - Clé = 1ère colonne du CSV par défaut (convention WinDev `ID...`, confirmée sur les 618 tables).
      Quelques tables ont une clé composite déclarée dans `COMPOSITE_KEYS` en tête du script
-     (`FAC_HISTO_FAMILLE`, `FAC_COMPTA_FAMILLE`, `COM_LIENER`...) — à compléter si une nouvelle table
-     à clé non fiable apparaît (le loader la liste dans son rapport plutôt que de deviner).
+     (`FAC_HISTO_FAMILLE`, `FAC_COMPTA_FAMILLE`, `COM_LIENER`, `COM_PIECE_RECU`, `PA_SUIVI_CONSOMMATEUR`,
+     `COM_PREFERENCES`...). **Une table dont la clé a des doublons n'est plus ignorée** (02/10/2026) :
+     elle est chargée avec la clé de secours `_rowkey` (hash de la ligne + rang d'occurrence, les
+     doublons exacts de `FAC_COMPTA_GENERAL` sont conservés) et *remplacée* à chaque export (sans
+     identité stable, une ligne modifiée serait sinon cumulée avec l'ancienne). Avant cette correction,
+     le flux « un clic » servait une base à 102 tables au lieu de 123 — sans `PA_SUIVI_CONSOMMATEUR`,
+     `FAC_COMPTA_GENERAL`, `COM_PIECE_RECU`, `FAC_HISTO_ELEVE` — et l'audit, la fiche famille et la
+     comparaison d'exports ne fonctionnaient plus.
+   - Un CSV vide (en-tête seul) crée la table, ou la vide si elle avait des lignes : `FAC_GESTION_*`
+     redevient vide après validation. Les tables de préparation (`SNAPSHOT_TABLES`) sont remplacées,
+     jamais cumulées. Si la clé d'une table en base change, la table est reconstruite.
    - Aucun DDL requis : structure déduite des en-têtes CSV (colonnes `TEXT`).
+   - Sur le Mac, c'est `~/Charlemagne/automatisation/charlemagne_load_inbox.sh` (launchd) qui appelle ce
+     loader. Depuis la VM Cowork (dossier monté), SQLite échoue en écriture (« disk I/O error ») :
+     charger dans `$HOME` puis copier la base.
 3. **Orchestration (fait)** : tâche planifiée Windows `"Charlemagne CSV Loader"`, quotidienne à 6h30, mode
    "Interactive only" (tourne seulement session ouverte — nécessaire pour l'accès OneDrive). Commande :
    `pythonw.exe loader\run_scheduled_load.py`. Testée par déclenchement manuel (`schtasks /run`), log
@@ -124,6 +136,41 @@ facturation reelle, a garder en tete) :
 Tests : `tests/test_comparaison.py`, `tests/test_audit_facturation.py` (donnees synthetiques).
 Bout en bout : `scripts/smoke_test_audit.py` (vraie base, ne rien commiter de sa sortie).
 
+## Suivi de la facturation en cours d'annee (fait, 02/10/2026)
+Charlemagne ne recalcule pas une facture validee : apres la facturation initiale, les changements
+(forfaits, justificatifs tardifs, arrivees, departs, reglement) passent par une **facture
+complementaire ou un avoir manuel** (formation Aplim CFP12 : complementaire calculee ou manuelle, avoir
+manuel ou automatique, reactualisation de l'echeancier). Constate sur la validation n° 2 du 01/10/2026
+(type `Manuelles`, factures 271-272) : les lignes manuelles sont saisies dans `FAC_GESTION_HISTO`
+(`GH_CODE_LIGNE`, `GH_QTE`, `GH_PRIX`, `GH_LIBELLE`), la validation cree une nouvelle `FAC_HISTO_FAMILLE`
+par responsable dont `HF_ORI_SOLDE` est le **solde restant des factures precedentes** (pas une dette ;
+`HF_SOLDE_PRIS` vaut 1 partout, ce n'est pas le discriminant) et dont l'echeancier re-etale ce solde +
+la complementaire sur les mois restants ; `FAC_VALIDATION.VA_TYPE_FACTURE` = `Toutes` / `Manuelles` ;
+`FAC_LOG` garde la trace d'une facture supprimee.
+- `tools/regles_facturation.py` : moteur commun « lignes attendues » (`Contexte`, `attendu_eleve`,
+  `fratrie_attendue`, `apel_attendue`) + prorata au mois (`regles["prorata"]`, defaut 9 → 10 mois,
+  tout mois commence est du). Utilise par l'audit et par les deux tools ci-dessous.
+- `regularisations_a_preparer(date_effet, id_eleve)` (`tools/suivi_facturation.py`) : cumul facture
+  (toutes validations, hors lignes de regroupement) vs attendu, par eleve et par code ; propose les
+  lignes de facture manuelle (code, quantite 1, prix plein et prix au prorata, libelle, quote-part des
+  payeurs). Modele : une ligne de la facturation initiale couvre l'annee ; une ligne d'une
+  complementaire couvre les mois a partir du mois de la facture, **sauf si son montant est le tarif
+  annuel entier** (alors elle couvre l'annee — choix de Remi pour une prestation suivie depuis la
+  rentree). Rubriques : regularisations, departs (avoir sur les mois suivant la sortie), nouveaux eleves
+  (contribution = lignes de la classe sur la facturation initiale), apel (sans prorata), remise
+  personnel absente, lignes manuelles en attente (avec controle : conforme / deja conforme / a
+  verifier), justificatifs recus sans information saisie (`regles["pieces_justificatifs"]`) et
+  l'inverse.
+- `suivi_echeanciers(id_responsable)` : factures de l'annee, echeances passees / a venir, reste a
+  prelever, alertes (echeancier incoherent, mode de reglement modifie depuis la facture, prelevement
+  sans IBAN, echeances irregulieres, payeur modifie, enfant du payeur non facture). Pas de statut
+  paye/impaye (aucun encaissement exporte).
+- `audit_de_facturation` et `fiche_famille` sont devenus **cumulatifs** : lignes additionnees sur toutes
+  les validations, echeancier lu sur la derniere facture, solde reporte lu sur la premiere ; rubriques
+  informatives `ligne_de_regularisation` et `ligne_au_prorata` ; `fiche_famille` renvoie le detail par
+  facture (`factures`) et les lignes manuelles en attente.
+Tests : `tests/test_suivi_facturation.py`, `tests/test_loader.py`. Bout en bout : `scripts/smoke_test_suivi.py`.
+
 ## Droits EcoleDirecte des adultes (fait, 30/09/2026)
 `droits_ecoledirecte_personnels(id_personnel=None, actifs_seulement=True)` (`tools/personnels.py`,
 fonction `droits_ecoledirecte`) : pour chaque adulte, coche « Utilisateur EcoleDirecte »
@@ -171,7 +218,9 @@ charlemagne-mcp/
 ├── tools/
 │   ├── facturation.py                   # solde_eleve
 │   ├── personnels.py                    # liste_personnels, droits_ecoledirecte_personnels
+│   ├── regles_facturation.py            # moteur commun : lignes attendues, prorata au mois (regles JSON)
 │   ├── audit_facturation.py             # audit_de_facturation (regles : CHARLEMAGNE_REGLES_FACTURATION)
+│   ├── suivi_facturation.py             # regularisations_a_preparer, suivi_echeanciers (cours d'annee)
 │   ├── comparaison.py                   # comparer_exports (archives : CHARLEMAGNE_ARCHIVES_DIR)
 │   └── historique_mails.py              # historique_mails_charlemagne (COM_HISTORIQUE_MAILS)
 ├── db/

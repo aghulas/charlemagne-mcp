@@ -12,7 +12,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from loader import load_charlemagne as L  # noqa: E402
+from loader import load_charlemagne as L
 
 
 def ecrire_csv(dossier: Path, table: str, lignes: list[str]) -> None:
