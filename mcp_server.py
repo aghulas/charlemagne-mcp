@@ -22,11 +22,13 @@ from mcp.server.mcpserver import MCPServer
 from db.connection import get_connection
 from tools import (
     audit_facturation,
+    calendrier,
     comparaison,
     eleves,
     facturation,
     famille,
     historique_mails,
+    modifications,
     personnels,
     responsables,
     suivi_facturation,
@@ -90,7 +92,7 @@ def register_tools(server: MCPServer) -> None:
         )
     )
     def liste_eleves(classe: str | None = None, actifs_seulement: bool = True) -> dict:
-        """Liste les eleves, avec filtre optionnel par classe et par statut actif."""
+        """Liste les eleves (avec enseignant(s) de la classe et anciennete), filtrable par classe et statut."""
         conn = get_connection()
         try:
             resultats = eleves.liste_eleves(conn, classe=classe, actifs_seulement=actifs_seulement)
@@ -365,6 +367,56 @@ def register_tools(server: MCPServer) -> None:
             return res
         finally:
             conn.close(); prec.close()
+
+    @server.tool(
+        description=(
+            "Journal des modifications de fiches (eleve ou responsable) consignees dans "
+            "Charlemagne comme restant a traiter pour EcoleDirecte (COM_JOURNAL_MODIF) : fiche "
+            "concernee, classe, auteur Charlemagne, date de modification, date d'envoi (vide = "
+            "jamais envoye), statut. Par defaut uniquement le statut 'En attente' ; statut=None "
+            "pour tout le journal. Sert a reperer ce qui attend depuis longtemps et a le "
+            "verifier dans Charlemagne (module EcoleDirecte). Lecture seule, a la date du dernier "
+            "export."
+        )
+    )
+    def modifications_ecoledirecte_en_attente(statut: str | None = "En attente") -> dict:
+        """Modifications de fiches en attente de traitement EcoleDirecte."""
+        conn = get_connection()
+        try:
+            resultats = modifications.modifications_ecoledirecte_en_attente(conn, statut=statut)
+            return {
+                "nb_modifications": len(resultats),
+                "modifications": resultats,
+                "note": (
+                    "Base a jour a la date du dernier export Charlemagne charge, pas en temps reel. "
+                    "Interpretation de la table a confirmer dans Charlemagne (module EcoleDirecte, "
+                    "journal des modifications) : l'outil expose les faits, pas la cause."
+                ),
+            }
+        finally:
+            conn.close()
+
+    @server.tool(
+        description=(
+            "Calendrier scolaire : nombre de jours de classe par mois sur l'annee couverte par "
+            "les periodes Charlemagne (VS_TAB_PERIODES, du debut de T1 a la fin de T3), d'apres "
+            "les jours sans classe (VS_CONGE : week-ends, mercredis, vacances, feries). Base des "
+            "prorata au mois pour la cantine, la garderie et l'etude (voir FAC_GRILLE_PERIODE "
+            "pour les mois factures par ligne). id_classe optionnel pour ajouter les conges "
+            "propres a une classe. Lecture seule, a la date du dernier export."
+        )
+    )
+    def jours_de_classe(id_classe: str | None = None) -> dict:
+        """Jours de classe par mois (calendrier Charlemagne)."""
+        conn = get_connection()
+        try:
+            res = calendrier.jours_de_classe(conn, id_classe=id_classe)
+            if not res:
+                return {"error": "VS_CONGE ou VS_TAB_PERIODES absentes de la base."}
+            res["note"] = "Base a jour a la date du dernier export Charlemagne charge, pas en temps reel."
+            return res
+        finally:
+            conn.close()
 
 
 def main() -> None:

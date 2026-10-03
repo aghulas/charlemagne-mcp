@@ -12,6 +12,8 @@ Lecture seule. Aucune coordonnee bancaire n'est renvoyee (seulement renseigne / 
 
 import sqlite3
 
+from tools.referentiels import libelles_csp, libelles_liens, libelles_situations_familiales
+
 JOURS = (("lundi", "1"), ("mardi", "2"), ("mercredi", "3"), ("jeudi", "4"), ("vendredi", "5"))
 
 
@@ -119,6 +121,7 @@ def fiche_famille(conn, id_eleve: str | None = None, id_foyer: str | None = None
         })
 
     # --- responsables (jamais de coordonnees bancaires : seulement renseigne / vide)
+    lib_lien, lib_csp, lib_sitfam = libelles_liens(conn), libelles_csp(conn), libelles_situations_familiales(conn)
     responsables = []
     for r in resp:
         rid = str(r["IDRESPONSABLE"])
@@ -127,10 +130,13 @@ def fiche_famille(conn, id_eleve: str | None = None, id_foyer: str | None = None
         responsables.append({
             "id_responsable": rid, "responsable": noms_r[rid], "id_foyer": r.get("IDFOYER"),
             "mode_reglement": r.get("RE_MODE_REGLEMENT"), "iban": _renseigne(r.get("RE_IBAN")),
+            "situation_familiale": lib_sitfam.get(str(r.get("RE_ID_SITFAM") or ""), r.get("RE_ID_SITFAM") or None),
+            "csp": lib_csp.get(str(r.get("RE_CSP1") or ""), r.get("RE_CSP1") or None),
             "enfants_a_charge": r.get("RE_ENF_A_CHARGE"), "quotient1": r.get("RE_QUOTIENT1") or None,
             "quotient2": r.get("RE_QUOTIENT2") or None, "cotisation_apel": r.get("RE_COT_APEL") or None,
             "informations_complementaires": infos,
             "liens": [{"id_eleve": str(l["IDELEVE"]), "eleve": noms_e.get(str(l["IDELEVE"])), "lien": l.get("LER_LIEN"),
+                       "lien_libelle": lib_lien.get(l.get("LER_LIEN"), l.get("LER_LIEN")),
                        "responsable_principal": str(l.get("LER_TYPE_RESP")) == "1",
                        "payeur": str(l.get("LER_VERSQUI")) == "1", "pourcentage": _num(l.get("LER_POURCENTAGE"))}
                       for l in liens if str(l["IDRESPONSABLE"]) == rid],

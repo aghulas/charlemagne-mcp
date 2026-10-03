@@ -20,13 +20,7 @@ besoin couvert ici est l'identite et le contact, pas la facturation.
 
 import sqlite3
 
-# COM_LIENER.LER_LIEN : codes observes sur l'export (PS/MS majoritaires).
-LIBELLES_LIEN = {
-    "PS": "Père",
-    "MS": "Mère",
-    "PM": "Autre parent",
-    "AU": "Autre",
-}
+from tools.referentiels import libelles_liens
 
 
 def _personne(row: sqlite3.Row, bloc: int) -> dict | None:
@@ -100,6 +94,7 @@ def responsables_eleves(
     query += " ORDER BY c.CL_LIBELLE, e.EL_NOM1, e.EL_PRENOM1, l.LER_ORDRE"
 
     rows = cur.execute(query, params).fetchall()
+    libelles = libelles_liens(conn)  # TAB_LIENS (30 codes), avec repli integre
 
     par_eleve: dict[str, dict] = {}
     for row in rows:
@@ -119,7 +114,7 @@ def responsables_eleves(
                 {
                     "id_responsable": row["IDRESPONSABLE"],
                     "lien": lien,
-                    "lien_libelle": LIBELLES_LIEN.get(lien, lien),
+                    "lien_libelle": libelles.get(lien, lien),
                     "type_resp": row["LER_TYPE_RESP"],
                     "tel_domicile": row["RE_TELDOMICILE"],
                     "code_postal": row["RE_CODEPOSTAL"],

@@ -7,13 +7,23 @@ resultat structure minimal. Lecture seule uniquement.
 
 import sqlite3
 
+from tools.referentiels import anciennete_par_eleve, enseignants_par_classe
+
 
 def liste_eleves(
     conn: sqlite3.Connection,
     classe: str | None = None,
     actifs_seulement: bool = True,
 ) -> list[dict]:
-    """Liste des eleves avec IDELEVE, nom, prenom, sexe et classe.
+    """Liste des eleves avec IDELEVE, nom, prenom, sexe, classe, enseignant(s)
+    de la classe et anciennete dans l'ecole.
+
+    enseignants : enseignant(s) principal(aux) de la classe (COM_PROFS_PRINCIPAUX,
+        plusieurs lignes possibles en co-enseignement) ; liste vide si la table
+        est absente de la base.
+    premiere_annee / nb_annees_precedentes : d'apres ADM_HISTO_CLASSE_MEF
+        (annees scolaires passees dans l'ecole) ; None / 0 pour un eleve arrive
+        cette annee ou si la table est absente.
 
     Le sexe est repris tel quel de COM_ELEVES.EL_SEXE ('M' / 'F' sur l'export
     courant), sans normalisation : c'est la valeur saisie dans Charlemagne,
@@ -35,7 +45,7 @@ def liste_eleves(
 
     query = """
         SELECT e.IDELEVE, e.EL_NOM1, e.EL_PRENOM1, e.EL_SEXE,
-               e.EL_DATE_SORTIE, c.CL_LIBELLE
+               e.EL_DATE_SORTIE, e.EL_IDCLASSE, c.CL_LIBELLE
         FROM COM_ELEVES e
         LEFT JOIN COM_CLASSES c ON c.IDCLASSE = e.EL_IDCLASSE
         WHERE 1=1
@@ -49,15 +59,23 @@ def liste_eleves(
     query += " ORDER BY c.CL_LIBELLE, e.EL_NOM1, e.EL_PRENOM1"
 
     rows = cur.execute(query, params).fetchall()
-    return [
-        {
-            "id_eleve": row["IDELEVE"],
-            "nom": row["EL_NOM1"],
-            "prenom": row["EL_PRENOM1"],
-            "nom_prenom": f"{row['EL_NOM1']} {row['EL_PRENOM1']}",
-            "sexe": row["EL_SEXE"],
-            "classe": row["CL_LIBELLE"],
-            "actif": not bool(row["EL_DATE_SORTIE"]),
-        }
-        for row in rows
-    ]
+    enseignants = enseignants_par_classe(conn)
+    anciennete = anciennete_par_eleve(conn)
+    resultat = []
+    for row in rows:
+        histo = anciennete.get(str(row["IDELEVE"]), {})
+        resultat.append(
+            {
+                "id_eleve": row["IDELEVE"],
+                "nom": row["EL_NOM1"],
+                "prenom": row["EL_PRENOM1"],
+                "nom_prenom": f"{row['EL_NOM1']} {row['EL_PRENOM1']}",
+                "sexe": row["EL_SEXE"],
+                "classe": row["CL_LIBELLE"],
+                "enseignants": [e["nom_prenom"] for e in enseignants.get(str(row["EL_IDCLASSE"]), [])],
+                "premiere_annee": histo.get("premiere_annee"),
+                "nb_annees_precedentes": histo.get("nb_annees_precedentes", 0),
+                "actif": not bool(row["EL_DATE_SORTIE"]),
+            }
+        )
+    return resultat

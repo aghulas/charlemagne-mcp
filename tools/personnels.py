@@ -11,6 +11,8 @@ distinct, a traiter par une fonction dediee le jour ou il se presente.
 
 import sqlite3
 
+from tools.referentiels import table_existe
+
 
 def liste_personnels(
     conn: sqlite3.Connection,
@@ -29,8 +31,20 @@ def liste_personnels(
 
     actifs_seulement : si True (par defaut), exclut les adultes ayant une
         PE_DATE_SORTIE renseignee.
+
+    classes : libelles des classes dont la personne est enseignant principal
+        (COM_PROFS_PRINCIPAUX) ; liste vide pour les autres personnels ou si
+        la table est absente de la base.
     """
     cur = conn.cursor()
+    classes: dict[str, list[str]] = {}
+    if table_existe(conn, "COM_PROFS_PRINCIPAUX") and table_existe(conn, "COM_CLASSES"):
+        for r in conn.execute(
+            """SELECT pp.IDPERSONNEL, c.CL_LIBELLE FROM COM_PROFS_PRINCIPAUX pp
+               LEFT JOIN COM_CLASSES c ON c.IDCLASSE = pp.IDCLASSE
+               ORDER BY c.CL_LIBELLE"""
+        ):
+            classes.setdefault(str(r[0]), []).append(r[1])
 
     query = """
         SELECT IDPERSONNEL, PE_NOM, PE_PRENOM, PE_PARTICULE, PE_TYPE, PE_DATE_SORTIE
@@ -51,6 +65,7 @@ def liste_personnels(
             "particule": row["PE_PARTICULE"] or None,
             "nom_prenom": f"{row['PE_NOM']} {row['PE_PRENOM']}",
             "type": row["PE_TYPE"],
+            "classes": classes.get(str(row["IDPERSONNEL"]), []),
             "actif": not bool(row["PE_DATE_SORTIE"]),
         }
         for row in rows
