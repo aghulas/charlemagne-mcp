@@ -1,5 +1,5 @@
 ---
-name: charlemagne-import-infos-complementaires
+name: "charlemagne-import-infos-complementaires"
 description: "Use when preparing a CSV file to import/update Charlemagne 'informations complémentaires élèves' (École Sainte Marie) via Administratif › Outils › Récupération d'informations complémentaires élèves — PAI, allergies, régime alimentaire, bavoir, classe découverte… Also use when the user wants to update informations complémentaires of RESPONSABLES (justificatifs, fratrie, foyer séparé): there is no import for them, produce a manual entry list instead."
 ---
 

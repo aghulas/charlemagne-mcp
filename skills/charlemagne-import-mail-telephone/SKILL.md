@@ -1,5 +1,5 @@
 ---
-name: charlemagne-import-mail-telephone
+name: "charlemagne-import-mail-telephone"
 description: "Use when preparing the Charlemagne 'ImportMailTelephone' Excel file to bulk-update email/phone for students or staff (École Sainte Marie), imported natively from within Charlemagne."
 ---
 

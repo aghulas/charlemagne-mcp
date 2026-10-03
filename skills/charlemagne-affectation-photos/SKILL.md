@@ -1,5 +1,5 @@
 ---
-name: charlemagne-affectation-photos
+name: "charlemagne-affectation-photos"
 description: "Use when preparing a folder of student/staff photos for Charlemagne's automatic photo assignment (École Sainte Marie) via Administratif > Outils > Affectation des photos > Élèves – Adultes."
 ---
 
