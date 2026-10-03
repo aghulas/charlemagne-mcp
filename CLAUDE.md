@@ -224,6 +224,28 @@ par envoi), du plus récent au plus ancien. Format de la table, relevé sur l'ex
 Le filtre `destinataire` revérifie la correspondance entrée par entrée (un LIKE sur la liste brute
 peut chevaucher deux adresses). Tests : `tests/test_historique_mails.py` (données synthétiques).
 
+## Enrichissements et nouveaux tools issus de l'inventaire des tables (fait, 03/10/2026)
+Inventaire complet des 119 tables peuplées dans `schema-dictionary.md` (§ Inventaire) : 68 tables
+classées, 12 explorées. Résultat dans le code :
+- `tools/referentiels.py` : libellés `TAB_LIENS` (lien de parenté, 30 codes — remplace le petit
+  dictionnaire codé en dur), `TAB_CSP`, `TAB_SIT_FAM` ; enseignants principaux par classe
+  (`COM_PROFS_PRINCIPAUX`, plusieurs lignes possibles en co-enseignement) ; ancienneté par élève
+  (`ADM_HISTO_CLASSE_MEF`, une ligne par année scolaire passée). Toutes les fonctions **tolèrent
+  l'absence d'une table** (retour vide) pour qu'un outil ne casse jamais sur une base ancienne ou de test.
+- `liste_eleves` : `enseignants`, `premiere_annee`, `nb_annees_precedentes` ; `liste_personnels` :
+  `classes` ; `responsables_eleves` et `fiche_famille` : `lien_libelle` ; `fiche_famille` : aussi
+  `situation_familiale` et `csp` en libellé (identité/contexte, jamais de données bancaires).
+- `modifications_ecoledirecte_en_attente(statut='En attente')` (`tools/modifications.py`) :
+  `COM_JOURNAL_MODIF` = fiches (élève/responsable) modifiées dans Charlemagne et marquées à traiter pour
+  EcoleDirecte — auteur Charlemagne, date de modification, date d'envoi (zéro = jamais envoyé), statut.
+  Interprétation à confirmer dans le module EcoleDirecte de Charlemagne : l'outil expose les faits.
+- `jours_de_classe(id_classe=None)` (`tools/calendrier.py`) : jours de classe par mois d'après `VS_CONGE`
+  (jours sans classe, `IDCLASSE = 0` = toute l'école) et `VS_TAB_PERIODES` (T1 → T3) — 139 jours sur
+  2026-2027. Base des prorata au jour ; le prorata au mois reste la règle des forfaits.
+- Non exploités volontairement : `FAC_HISTO_IBAN` (bancaire), module Passage (`PA_*`, pas encore en
+  production), référentiels nationaux (`TAB_ETAB_ORI`, `TAB_VILLE`, `TAB_COMMUNE` : 180 000 lignes).
+Tests : `tests/test_referentiels_enrichissements.py` (données synthétiques).
+
 ## Règles non négociables
 - Jamais de concaténation de chaînes SQL — requêtes paramétrées uniquement (`sqlite3` avec `?`)
 - Jamais d'identifiants en dur dans le code — variables d'environnement / config uniquement
@@ -237,6 +259,9 @@ charlemagne-mcp/
 ├── tools/
 │   ├── facturation.py                   # solde_eleve
 │   ├── personnels.py                    # liste_personnels, droits_ecoledirecte_personnels
+│   ├── referentiels.py                  # libelles (liens, CSP, situation fam.), enseignants/classe, anciennete
+│   ├── modifications.py                 # modifications_ecoledirecte_en_attente (COM_JOURNAL_MODIF)
+│   ├── calendrier.py                    # jours_de_classe (VS_CONGE, VS_TAB_PERIODES)
 │   ├── regles_facturation.py            # moteur commun : lignes attendues, prorata au mois (regles JSON)
 │   ├── audit_facturation.py             # audit_de_facturation (regles : CHARLEMAGNE_REGLES_FACTURATION)
 │   ├── suivi_facturation.py             # regularisations_a_preparer, suivi_echeanciers (cours d'annee)
