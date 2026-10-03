@@ -1,6 +1,6 @@
 ---
 name: charlemagne-import-mail-telephone
-description: "Use when preparing the Charlemagne 'ImportMailTelephone' Excel file to bulk-update email/phone for students or staff, imported natively from within Charlemagne."
+description: "Use when preparing the Charlemagne 'ImportMailTelephone' Excel file to bulk-update email/phone for students or staff (École Sainte Marie), imported natively from within Charlemagne."
 ---
 
 # Import Charlemagne — email / téléphone (élèves et adultes)
@@ -36,7 +36,8 @@ Cette skill prépare le fichier Excel à importer dans Charlemagne pour mettre �
 - Cet import ne couvre que les **élèves** et les **adultes de l'établissement**. Pour les
   **responsables (parents)**, passer par l'outil `ed_admin_demande_telephones` du connecteur
   EcoleDirecte admin : demande de modification des coordonnées au nom de la famille (simulation,
-  puis accord, puis envoi), validée ensuite par le secrétariat dans Charlemagne.
+  puis accord, puis envoi), validée ensuite par le secrétariat dans Charlemagne. En septembre 2026,
+  465 numéros de parents ont été reformatés ainsi ; 4 cas ont dû être traités à la main.
 
 ## Vigilance données
 

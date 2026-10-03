@@ -1,6 +1,6 @@
 ---
 name: charlemagne-import-infos-complementaires
-description: "Use when preparing a CSV file to import/update Charlemagne 'informations complémentaires élèves' via Administratif › Outils › Récupération d'informations complémentaires élèves — PAI, allergies, régime alimentaire, bavoir, classe découverte… Also use when the user wants to update informations complémentaires of RESPONSABLES (justificatifs, fratrie, foyer séparé): there is no import for them, produce a manual entry list instead."
+description: "Use when preparing a CSV file to import/update Charlemagne 'informations complémentaires élèves' (École Sainte Marie) via Administratif › Outils › Récupération d'informations complémentaires élèves — PAI, allergies, régime alimentaire, bavoir, classe découverte… Also use when the user wants to update informations complémentaires of RESPONSABLES (justificatifs, fratrie, foyer séparé): there is no import for them, produce a manual entry list instead."
 ---
 
 # Import Charlemagne — informations complémentaires élèves
@@ -26,15 +26,15 @@ Cette skill prépare un fichier CSV prêt à être importé dans Charlemagne pou
    - Sinon, si la base SQLite consolidée (`data/administration_consolidee.db`) est accessible directement, interroger `COM_ELEVES` (IDELEVE, EL_NOM1, EL_PRENOM1) de la même façon.
    - Si ni l'un ni l'autre n'est disponible, ou en cas de doute (homonymes, orthographe qui ne colle pas), utiliser la variante "NOM PRENOM" et signaler explicitement à l'utilisateur les cas ambigus ou non trouvés plutôt que de deviner — un élève mal apparié écrase la mauvaise fiche.
    - Rappel : cette recherche ne couvre jamais les anciens élèves (table ADM_ANCIEN, identifiants dans un espace séparé) — un ancien élève ne peut pas être ciblé par cet import.
-3. Construire le CSV : en-tête exact, séparateur `;`, **encodage Windows (CP-1252)**, champs vides laissés vides. ⚠️ Constaté à l'usage : un CSV en UTF-8 (même avec BOM) est importé avec les accents cassés (« Å’ufs » au lieu de « Œufs ») ; il a fallu tout réimporter en CP-1252. Remplacer au besoin les caractères absents de CP-1252.
+3. Construire le CSV : en-tête exact, séparateur `;`, **encodage Windows (CP-1252)**, champs vides laissés vides. ⚠️ Constaté en septembre 2026 : un CSV en UTF-8 (même avec BOM) est importé avec les accents cassés (« Å’ufs » au lieu de « Œufs ») ; il a fallu tout réimporter en CP-1252. Remplacer au besoin les caractères absents de CP-1252.
 4. Avant de livrer, résumer à l'utilisateur : nombre de lignes, colonnes/catégories couvertes, élèves non trouvés ou ambigus (s'il y en a), et rappeler le comportement cumulatif si un remplacement complet a été demandé (fournir aussi le CSV vide de réinitialisation dans ce cas).
 5. Livrer le fichier comme n'importe quel livrable (SendUserFile), jamais d'import automatique dans Charlemagne — c'est toujours l'utilisateur qui importe depuis l'interface Charlemagne.
 
-## Ce qu'on a appris à l'usage
+## Ce qu'on a appris à l'usage (rentrée 2026)
 
 - **Un import ne vide pas une valeur** : une cellule vide laisse la valeur existante en place. Pour
-  effacer une information d'un élève, l'utilisateur doit la supprimer à la main dans Charlemagne —
-  le lui dire explicitement.
+  effacer une information d'un élève (ex. « PAI en attente » devenu sans objet), l'utilisateur doit
+  la supprimer à la main dans Charlemagne — le lui dire explicitement.
 - **Réimporter une ligne remplace sa valeur** : pour corriger quelques élèves, un petit CSV avec
   seulement ces lignes suffit.
 - **Valeurs testées par des formules de facturation** : utiliser exactement la valeur attendue par
