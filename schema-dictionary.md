@@ -192,6 +192,94 @@ est composée cette facture").
 
 ---
 
+## Inventaire des tables peuplées non couvertes par les cas d'usage (exploration des 02-03/10/2026)
+
+Point de départ : 119 tables peuplées dans l'export 2026-2027, 51 citées dans la documentation ou le code, **68 jamais
+regardées**. Toutes ont été classées ; douze ont été explorées (contenu, clés, jointures). Chiffres sur l'export du 02/10/2026.
+
+### Tables métier explorées — candidates pour de nouveaux tools ou l'enrichissement des existants
+
+#### ADM_HISTO_CLASSE_MEF — parcours de classe par année (3 252 lignes)
+
+| Colonne | Sens |
+|---|---|
+| `IDELEVE`, `IDCLASSE` | Élève et classe de l'année ; `IDCLASSE` joint `COM_CLASSES` à 100 % (vérifié sur 2025-2026) |
+| `ANNEE_SCOLAIRE` | `2018-2019` → `2025-2026` : une ligne par élève et par année **passée** (≈405/an) ; l'année en cours n'y est pas, elle est dans `COM_ELEVES` |
+| `DATE_ENTREE`, `DATE_SORTIE` | `AAAAMMJJ`, toujours renseignées (rentrée → fin d'année) ; une sortie en cours d'année y apparaît par sa date |
+| `CODE_MEF_INTERNE` | Niveau : libellé court (`CP`, `CM1`…) ou code MEF numérique selon les années — normaliser avant usage |
+
+Usage : ancienneté dans l'école, parcours d'un élève, détection des arrivées/départs en cours d'année (prorata). 407 élèves actuels ont un historique.
+
+#### ADM_CURSUS — cursus par année (1 518 lignes)
+
+`IDELEVE`, `CUR_ANNEE_SCOLAIRE`, `CUR_CLASSE`, `CUR_NIVEAU` (`C1 Cycle 1` / `C2 Cycle 2` / `C3 Cycle 3`), `CUR_DIPLOME` (toujours vide en primaire).
+Format d'année **incohérent** (`2017-2018` puis `2018/2019`…) et effectif croissant par année (3 → 407) : c'est le cursus connu des élèves **actuels**, pas un historique complet — préférer `ADM_HISTO_CLASSE_MEF` pour le passé.
+
+#### COM_PROFS_PRINCIPAUX — enseignant principal par classe (17 lignes)
+
+`IDPERSONNEL` → `COM_PERSONNELS`, `IDCLASSE` → `COM_CLASSES`, `NUM_LIGNE` (rang). Jointures à 100 %. Une classe peut avoir deux lignes (co-enseignement, ex. CE1A). À brancher dans `liste_personnels` / `liste_eleves` (« enseignant de la classe »).
+
+#### VS_CONGE — calendrier des jours sans classe (226 lignes) et VS_TAB_PERIODES (5 lignes)
+
+`VS_CONGE` : `CO_JOUR` (`AAAAMMJJ`) du 01/08/2026 au 31/07/2027, `IDCLASSE = 0` = toute l'école (week-ends, vacances, fériés). `VS_TAB_PERIODES` : trimestres `T1`–`T3` et semestres `S1`–`S2` avec dates. Usage : nombre de jours de classe par mois (prorata cantine/garderie), bornes de périodes.
+
+#### COM_OPTIONS_EL — options par élève (277 lignes) et COM_OPTIONS_MOINS1 (275, année précédente)
+
+Une seule option utilisée : `OE_TYPE = 1`, `OE_CODE_MATIERE = 0302` = **ANGLAIS** (`TAB_MATIERE`, jointure sur `MA_CODE_GESTION`/`MA_CODE_INTERNE`). 277 élèves inscrits. Probablement l'atelier d'anglais (cf. `PA_SUIVI_INSCRIPTION`).
+
+#### COM_JOURNAL_MODIF — modifications EcoleDirecte en attente (6 lignes)
+
+`TYPE` (`Eleve_ATraiter` / `Resp_ATraiter`), `TYPE_FICHIER`, `ID_CHARLEMAGNE`, `DATE_HEURE_MODIF`, `DATE_HEURE_ENVOI`, `UTILISATEUR`, `STATUT` (`En attente`).
+Ce sont les **demandes de modification de coordonnées faites par les familles dans EcoleDirecte, non encore validées dans Charlemagne** (4 élèves, 2 responsables au 02/10). File de travail directe pour le secrétariat → candidat à un tool `modifications_en_attente`.
+
+#### Module Passage (cantine / garderie) — PA_SUIVI_INSCRIPTION (6), PA_SUIVI_JOURNALIER (6), PA_PORTE_MONNAIE (2), PA_PDP (1)
+
+Activités paramétrées : `MATIN` (Garderie Matin), `MIDI` (Restauration du midi), `SOIR` (Restauration du Soir), `ETUDE` (Etude / Garderie Soir), `ATELIERANGLAIS`, `ATELIERANGLAISSOIR`. `PA_SUIVI_JOURNALIER` ne contient que des essais du 23/09 ; porte-monnaie `GARDERIE`/`ETUDE` à 0 : **module non encore en production** — à revoir quand l'appel cantine/garderie sera pris dans EcoleDirecte (chantier « appel »).
+
+#### INS_DOC_A_SIGNER — documents des inscriptions en ligne (3 lignes)
+
+`Convention de Scolarisation`, `Reglement Financier`, `Reglement Interieur`, créés le 28/09/2026 (`HASH` du document). Paramétrage des documents à signer par les familles.
+
+### Paramétrage de la facturation — à relier à la skill `charlemagne-facturation`
+
+| Table | Contenu | Remarque |
+|---|---|---|
+| `FAC_PERIODE` (1) | une seule période `TARIF`, `PE_MOIS_DEBUT = 9`, libellés des 12 mois de facturation | |
+| `FAC_GRILLE_PERIODE` (49) | par ligne de facturation (`GPE_CODE_LIGNE`), `GPE_CODE_FREQUENCE` (`FAMILLE`) et 12 drapeaux `GPE_MOIS1..12` = **mois où la ligne est facturée** | clé des prorata ; joint `FAC_GRILLE_PRIX.GP_CODE` |
+| `FAC_REM_AUTO` (3) | remises automatiques Aplim par défaut (`Contribution`, `Demi Pensionnaire`, `Internat`, à partir de 2 enfants, en %) | seule `Contribution` est pertinente (fratrie) ; `RA_STATIM = 1` = standard éditeur |
+| `FAC_FORMULE_MOT` (46) | **variables utilisées par les formules de l'école** : `FAMCOTAPEL`, `JUSTIFAPEL`, `FOYERSEPARE`, `FAMNBENFANTS`, `FAMNBENFANTSEXT`, `FAMQUOTIENT2`, `JUSTIFRTEXT`… avec leur origine (`Fiche Famille` / `Infos Comps Famille`) | à citer dans la skill facturation |
+| `FAC_FORMULE_MOTFICHE` (65) | catalogue des variables disponibles (dont bourses collège/lycée, sans objet ici) | |
+| `FAC_FORMULE_MOTCLE` / `FAC_FORMULE_SEP` | langage des formules : `SI ALORS SINON FIN ET OU RENVOYER PRIX QUANTITE APAYER GRILLE` et opérateurs | |
+| `FAC_SOCIETE` (1), `COM_ETABLISSEMENT` (1) | identité de l'OGEC et de l'école (adresse, RNE, direction), libellés des 3 quotients (`SOC_QUOT_LIBEL1..3`), mois de facturation | |
+| `FAC_HISTO_IBAN` (131) | historique des IBAN par responsable | **donnée bancaire : ne jamais exposer dans un tool** |
+
+### Tables de libellés — à utiliser dans les jointures plutôt que des codes bruts
+
+| Table | Clé | Joint depuis | Taux |
+|---|---|---|---|
+| `TAB_CSP` (41) | `CSP_CODE` | `COM_RESPONSABLES.RE_CSP1` | 602/614 (12 vides) ; `RE_CSP2` jamais renseigné |
+| `TAB_SIT_FAM` (6) | `IDTAB_SIT_FAM` | `COM_RESPONSABLES.RE_ID_SITFAM` | 560/614 |
+| `TAB_LIENS` (30) | `LIE_CODE` | `COM_LIENER.LER_LIEN` (et `LER_LIEN2`) | 947/947 |
+| `TAB_CIVILITE` (4) | `CI_CODE` | `RE_CIVILITE1/2` | |
+| `TAB_PAYS` (241) | `PA_CODE` | `RE_PAYS` | |
+| `COM_NIVEAU` (3) | `IDNIVEAU` | cycles C1/C2/C3 | |
+| `TAB_MATIERE` (70) | `MA_CODE_GESTION` / `MA_CODE_INTERNE` | `COM_OPTIONS_EL.OE_CODE_MATIERE` | |
+
+### Référentiels nationaux — volumineux, sans valeur métier propre
+
+`TAB_ETAB_ORI` (87 959 établissements d'origine), `TAB_VILLE` (53 514), `TAB_COMMUNE` (38 841), `TAB_DEPARTEMENT` (113), `REC_BE1D` (444 correspondances ONDE), `REC_TABLES` (12), `REC_FORMATION` (9), `NO_TABLE_NOTE_COMP` (10), `VS_PACTE_BRIQUES` / `VS_PACTE_MOTIFS_ABSENCE` / `VS_PACTE_TYPES_REMPLACANT` / `VS_PACTE_TYPES_REMPLACEMENT` (pacte enseignant). Ne pas explorer ; ces trois premières font 180 000 lignes à elles seules.
+
+### Configuration d'écrans, d'éditions et préférences — sans intérêt pour le connecteur
+
+`ADM_PARAMETRES_LISTES`, `ADM_LISTE_ENTETE`, `ADM_STAT_ENTETE`, `ADM_PROFS_COMPOSITION`, `ADM_PROFS_EDITION`, `ADM_BADGE_CHAMPS`, `ADM_BADGE_ENTETE`, `ADM_ETIQUETTES`, `ADM_TROMBIS`, `TAB_BADGE_CONFIG`, `VS_EDITION`, `VS_EDT_COULEURS`, `VS_SALLES`, `VS_LOCALISATION`, `TAB_SITE`, `VS_PARAMETRE`, `VS_PARAMETRES_ETAB`, `VS_PROFIL`, `VS_APPEL_PROF` (3 appels d'essai), `DASH_CONFIGURATION`, `PA_PREFERENCES`, `PA_UTILISATEUR`, `PA_PDP_PARAM`, `PA_FACTU_PMONNAIE`, `FAC_STAT_CHAMP`, `COM_MESSAGES_PREDEFINIS`.
+
+### Suites proposées
+
+1. Tool `modifications_en_attente` sur `COM_JOURNAL_MODIF` (file de validation EcoleDirecte → Charlemagne).
+2. Enrichir `liste_eleves` / `liste_personnels` : enseignant de la classe (`COM_PROFS_PRINCIPAUX`), ancienneté (`ADM_HISTO_CLASSE_MEF`), libellés CSP / situation familiale / lien.
+3. Dans la skill facturation : documenter `FAC_GRILLE_PERIODE` (mois facturés par ligne) et le vocabulaire `FAC_FORMULE_MOT` ; utiliser `VS_CONGE` pour les jours de classe par mois.
+4. Reprendre le module Passage quand l'appel cantine/garderie sera en production.
+
 ## Historique — exploration HFSQL/ODBC (abandonnée)
 
 *Piste explorée avant le pivot vers le pipeline CSV → SQLite ci-dessus.
