@@ -273,12 +273,20 @@ Activités paramétrées : `MATIN` (Garderie Matin), `MIDI` (Restauration du mid
 
 `ADM_PARAMETRES_LISTES`, `ADM_LISTE_ENTETE`, `ADM_STAT_ENTETE`, `ADM_PROFS_COMPOSITION`, `ADM_PROFS_EDITION`, `ADM_BADGE_CHAMPS`, `ADM_BADGE_ENTETE`, `ADM_ETIQUETTES`, `ADM_TROMBIS`, `TAB_BADGE_CONFIG`, `VS_EDITION`, `VS_EDT_COULEURS`, `VS_SALLES`, `VS_LOCALISATION`, `TAB_SITE`, `VS_PARAMETRE`, `VS_PARAMETRES_ETAB`, `VS_PROFIL`, `VS_APPEL_PROF` (3 appels d'essai), `DASH_CONFIGURATION`, `PA_PREFERENCES`, `PA_UTILISATEUR`, `PA_PDP_PARAM`, `PA_FACTU_PMONNAIE`, `FAC_STAT_CHAMP`, `COM_MESSAGES_PREDEFINIS`.
 
-### Suites proposées
+### Suites proposées — état au 03/10/2026
 
-1. Tool `modifications_en_attente` sur `COM_JOURNAL_MODIF` (file de validation EcoleDirecte → Charlemagne).
-2. Enrichir `liste_eleves` / `liste_personnels` : enseignant de la classe (`COM_PROFS_PRINCIPAUX`), ancienneté (`ADM_HISTO_CLASSE_MEF`), libellés CSP / situation familiale / lien.
-3. Dans la skill facturation : documenter `FAC_GRILLE_PERIODE` (mois facturés par ligne) et le vocabulaire `FAC_FORMULE_MOT` ; utiliser `VS_CONGE` pour les jours de classe par mois.
-4. Reprendre le module Passage quand l'appel cantine/garderie sera en production.
+1. **Fait** : tool `modifications_ecoledirecte_en_attente` sur `COM_JOURNAL_MODIF` (`tools/modifications.py`). Interprétation
+   à confirmer : les lignes sont signées par des utilisateurs Charlemagne (`UTILISATEUR`), pas par les familles — il s'agit
+   peut-être des fiches modifiées dans Charlemagne **en attente d'envoi vers EcoleDirecte** plutôt que l'inverse. À vérifier
+   dans le module EcoleDirecte de Charlemagne avant de s'appuyer sur le libellé du tool.
+2. **Fait** : `liste_eleves` expose `enseignants`, `premiere_annee`, `nb_annees_precedentes` ; `liste_personnels` expose
+   `classes` ; `responsables_eleves` / `fiche_famille` renvoient les libellés CSP, situation familiale et lien lus dans
+   `TAB_CSP`, `TAB_SIT_FAM`, `TAB_LIENS` (`tools/referentiels.py`, repli sur un dictionnaire si la table manque).
+3. **Fait** : tool `jours_de_classe` (`tools/calendrier.py`, `VS_CONGE` + `VS_TAB_PERIODES`) ; section « Tables de
+   paramétrage à connaître » dans la skill `charlemagne-facturation`.
+4. **Ouvert** : reprendre le module Passage (`PA_*`) quand l'appel cantine/garderie sera en production.
+5. **Ouvert** : aucun encaissement n'est exporté ; le signal d'impayé (`TYPE_ENCAISSEMENT = 'IMPAYE'` vu côté ODBC) n'a pas
+   d'équivalent dans l'export CSV.
 
 ## Historique — exploration HFSQL/ODBC (abandonnée)
 
