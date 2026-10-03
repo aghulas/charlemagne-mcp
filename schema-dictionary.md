@@ -227,10 +227,10 @@ Format d'année **incohérent** (`2017-2018` puis `2018/2019`…) et effectif cr
 
 Une seule option utilisée : `OE_TYPE = 1`, `OE_CODE_MATIERE = 0302` = **ANGLAIS** (`TAB_MATIERE`, jointure sur `MA_CODE_GESTION`/`MA_CODE_INTERNE`). 277 élèves inscrits. Probablement l'atelier d'anglais (cf. `PA_SUIVI_INSCRIPTION`).
 
-#### COM_JOURNAL_MODIF — modifications EcoleDirecte en attente (6 lignes)
+#### COM_JOURNAL_MODIF — fiches à envoyer vers EcoleDirecte (6 lignes)
 
-`TYPE` (`Eleve_ATraiter` / `Resp_ATraiter`), `TYPE_FICHIER`, `ID_CHARLEMAGNE`, `DATE_HEURE_MODIF`, `DATE_HEURE_ENVOI`, `UTILISATEUR`, `STATUT` (`En attente`).
-Ce sont les **demandes de modification de coordonnées faites par les familles dans EcoleDirecte, non encore validées dans Charlemagne** (4 élèves, 2 responsables au 02/10). File de travail directe pour le secrétariat → candidat à un tool `modifications_en_attente`.
+`TYPE` (`Eleve_ATraiter` / `Resp_ATraiter`), `TYPE_FICHIER`, `ID_CHARLEMAGNE`, `DATE_HEURE_MODIF`, `DATE_HEURE_ENVOI`, `UTILISATEUR`, `STATUT` (`En attente`), `DETAIL` (vide).
+**File de sortie Charlemagne → EcoleDirecte** (établi le 03/10/2026) : chaque fiche modifiée dans Charlemagne y est inscrite « à traiter » par la synchro, puis supprimée une fois envoyée (identifiants 679 → 1197 : ~1 200 entrées passées, 6 restantes). `UTILISATEUR` = l'utilisateur Charlemagne qui a modifié. Preuves : la table n'est pas dans la liste des 66 tables répliquées vers EcoleDirecte (`Replica_EtablissementAD.rpm`) ; les deux lignes `Resp_ATraiter` du 23/09 21h49-21h50 suivent de 4 minutes des demandes de téléphone envoyées par le connecteur et validées dans Charlemagne (plus aucune demande en attente côté EcoleDirecte, numéros à jour) ; les six lignes restantes concernent des élèves sortis (04/07, 01/09) ou leurs responsables, hors périmètre de la synchro, donc jamais envoyées. Ce n'est **pas** la file des demandes entrantes des familles (console EcoleDirecte). Tool `modifications_ecoledirecte_en_attente` avec `motif_probable`.
 
 #### Module Passage (cantine / garderie) — PA_SUIVI_INSCRIPTION (6), PA_SUIVI_JOURNALIER (6), PA_PORTE_MONNAIE (2), PA_PDP (1)
 
@@ -275,10 +275,8 @@ Activités paramétrées : `MATIN` (Garderie Matin), `MIDI` (Restauration du mid
 
 ### Suites proposées — état au 03/10/2026
 
-1. **Fait** : tool `modifications_ecoledirecte_en_attente` sur `COM_JOURNAL_MODIF` (`tools/modifications.py`). Interprétation
-   à confirmer : les lignes sont signées par des utilisateurs Charlemagne (`UTILISATEUR`), pas par les familles — il s'agit
-   peut-être des fiches modifiées dans Charlemagne **en attente d'envoi vers EcoleDirecte** plutôt que l'inverse. À vérifier
-   dans le module EcoleDirecte de Charlemagne avant de s'appuyer sur le libellé du tool.
+1. **Fait** : tool `modifications_ecoledirecte_en_attente` sur `COM_JOURNAL_MODIF` (`tools/modifications.py`), interprétation
+   établie le 03/10 (file de sortie vers EcoleDirecte, voir ci-dessus) et `motif_probable` pour les lignes bloquées.
 2. **Fait** : `liste_eleves` expose `enseignants`, `premiere_annee`, `nb_annees_precedentes` ; `liste_personnels` expose
    `classes` ; `responsables_eleves` / `fiche_famille` renvoient les libellés CSP, situation familiale et lien lus dans
    `TAB_CSP`, `TAB_SIT_FAM`, `TAB_LIENS` (`tools/referentiels.py`, repli sur un dictionnaire si la table manque).

@@ -370,27 +370,31 @@ def register_tools(server: MCPServer) -> None:
 
     @server.tool(
         description=(
-            "Journal des modifications de fiches (eleve ou responsable) consignees dans "
-            "Charlemagne comme restant a traiter pour EcoleDirecte (COM_JOURNAL_MODIF) : fiche "
-            "concernee, classe, auteur Charlemagne, date de modification, date d'envoi (vide = "
-            "jamais envoye), statut. Par defaut uniquement le statut 'En attente' ; statut=None "
-            "pour tout le journal. Sert a reperer ce qui attend depuis longtemps et a le "
-            "verifier dans Charlemagne (module EcoleDirecte). Lecture seule, a la date du dernier "
-            "export."
+            "Fiches (eleve ou responsable) modifiees dans Charlemagne et pas encore envoyees vers "
+            "EcoleDirecte (file de sortie COM_JOURNAL_MODIF, videe par la synchronisation) : fiche "
+            "concernee, classe, utilisateur Charlemagne qui a modifie, date de modification, date "
+            "d'envoi (vide = jamais envoye), statut, et motif probable quand la ligne est bloquee "
+            "(eleve sorti, responsable sans eleve actif : hors perimetre de la synchro). Par defaut "
+            "uniquement le statut 'En attente' ; statut=None pour tout le journal. Ce n'est PAS la "
+            "liste des demandes des familles en attente de validation (console EcoleDirecte). "
+            "Lecture seule, a la date du dernier export."
         )
     )
     def modifications_ecoledirecte_en_attente(statut: str | None = "En attente") -> dict:
-        """Modifications de fiches en attente de traitement EcoleDirecte."""
+        """Fiches modifiees dans Charlemagne en attente d'envoi vers EcoleDirecte."""
         conn = get_connection()
         try:
             resultats = modifications.modifications_ecoledirecte_en_attente(conn, statut=statut)
+            bloquees = sum(1 for m in resultats if m["motif_probable"])
             return {
                 "nb_modifications": len(resultats),
+                "nb_bloquees_hors_perimetre": bloquees,
                 "modifications": resultats,
                 "note": (
                     "Base a jour a la date du dernier export Charlemagne charge, pas en temps reel. "
-                    "Interpretation de la table a confirmer dans Charlemagne (module EcoleDirecte, "
-                    "journal des modifications) : l'outil expose les faits, pas la cause."
+                    "File de sortie Charlemagne -> EcoleDirecte : une ligne sans motif et recente partira "
+                    "a la prochaine synchro ; une ligne avec motif (eleve sorti...) ne partira jamais et "
+                    "peut etre ignoree."
                 ),
             }
         finally:

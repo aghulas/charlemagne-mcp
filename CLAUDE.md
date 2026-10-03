@@ -236,9 +236,13 @@ classées, 12 explorées. Résultat dans le code :
   `classes` ; `responsables_eleves` et `fiche_famille` : `lien_libelle` ; `fiche_famille` : aussi
   `situation_familiale` et `csp` en libellé (identité/contexte, jamais de données bancaires).
 - `modifications_ecoledirecte_en_attente(statut='En attente')` (`tools/modifications.py`) :
-  `COM_JOURNAL_MODIF` = fiches (élève/responsable) modifiées dans Charlemagne et marquées à traiter pour
-  EcoleDirecte — auteur Charlemagne, date de modification, date d'envoi (zéro = jamais envoyé), statut.
-  Interprétation à confirmer dans le module EcoleDirecte de Charlemagne : l'outil expose les faits.
+  `COM_JOURNAL_MODIF` = **file de sortie** Charlemagne → EcoleDirecte : fiches (élève/responsable) modifiées
+  dans Charlemagne, à envoyer par la synchro (les lignes envoyées sont supprimées ; la table n'est pas répliquée
+  vers EcoleDirecte). Utilisateur Charlemagne qui a modifié, dates de modification et d'envoi (zéro = jamais
+  envoyé), statut, `motif_probable` quand la ligne est bloquée (élève sorti, responsable sans élève actif).
+  Établi le 03/10/2026 : la validation dans Charlemagne d'une demande EcoleDirecte crée une ligne ; les six
+  lignes restantes de l'export concernent des élèves sortis. Ce n'est **pas** la liste des demandes des
+  familles en attente (celle-ci est dans la console EcoleDirecte).
 - `jours_de_classe(id_classe=None)` (`tools/calendrier.py`) : jours de classe par mois d'après `VS_CONGE`
   (jours sans classe, `IDCLASSE = 0` = toute l'école) et `VS_TAB_PERIODES` (T1 → T3) — 139 jours sur
   2026-2027. Base des prorata au jour ; le prorata au mois reste la règle des forfaits.

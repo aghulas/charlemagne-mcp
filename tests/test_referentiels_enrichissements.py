@@ -61,6 +61,14 @@ def conn():
             '00000000000000000', 'Secretariat', 'En attente', NULL);
         INSERT INTO COM_JOURNAL_MODIF VALUES ('j2', 'Resp_ATraiter', 'RESPONSABLE', 'R2', '20260923214925442',
             '20260924191500000', 'Secretariat', 'Traite', NULL);
+        -- Carl est sorti : sa fiche et celle de son unique responsable restent bloquees dans la file
+        INSERT INTO COM_ELEVES VALUES ('3', 'PETIT', 'Carl', 'M', 'C2', '20260704');
+        INSERT INTO COM_LIENER VALUES ('R3', '3', 'PS', '1', '1');
+        INSERT INTO COM_RESPONSABLES (IDRESPONSABLE, RE_NOM1, RE_PRENOM1) VALUES ('R3', 'PETIT', 'Marc');
+        INSERT INTO COM_JOURNAL_MODIF VALUES ('j3', 'Eleve_ATraiter', 'ELEVE', '3', '20260831132013848',
+            '00000000000000000', 'Secretariat', 'En attente', NULL);
+        INSERT INTO COM_JOURNAL_MODIF VALUES ('j4', 'Resp_ATraiter', 'RESPONSABLE', 'R3', '20260923215014259',
+            '00000000000000000', 'Direction', 'En attente', NULL);
         -- annee scolaire test : T1 du 1er au 30 septembre 2026 ; sans classe : week-ends + mercredis
         INSERT INTO VS_TAB_PERIODES VALUES ('1', 'T1', '20260901', '20260930', '1');
         """
@@ -112,18 +120,28 @@ def test_responsables_eleves_lien_libelle(conn):
 
 
 def test_modifications_en_attente_par_defaut(conn):
-    res = modifications_ecoledirecte_en_attente(conn)
-    assert len(res) == 1
-    m = res[0]
-    assert m["fiche"] == "MARTIN Bob" and m["classe"] == "CE1 B"
-    assert m["modifie_le"] == "2026-08-31 13:18:48"
-    assert m["envoye_le"] is None
+    import datetime as dt
+    res = modifications_ecoledirecte_en_attente(conn, aujourd_hui=dt.date(2026, 10, 3))
+    assert [m["fiche"] for m in res] == ["MARTIN Bob", "PETIT Carl", "PETIT Marc"]
+    bob, carl, marc = res
+    assert bob["classe"] == "CE1 B" and bob["modifie_le"] == "2026-08-31 13:18:48"
+    assert bob["envoye_le"] is None and bob["motif_probable"] is None  # partira a la prochaine synchro
+    assert carl["motif_probable"] == "eleve sorti le 2026-07-04 : hors perimetre de la synchro"
+    assert marc["motif_probable"].startswith("aucun eleve actif rattache (sortie le 2026-07-04)")
+
+
+def test_modifications_eleve_pas_encore_sorti(conn):
+    import datetime as dt
+    # avant la date de sortie, la fiche de Carl n'est pas bloquee
+    res = modifications_ecoledirecte_en_attente(conn, aujourd_hui=dt.date(2026, 6, 1))
+    assert all(m["motif_probable"] is None for m in res)
 
 
 def test_modifications_tout_le_journal(conn):
     res = modifications_ecoledirecte_en_attente(conn, statut=None)
-    assert [m["statut"] for m in res] == ["En attente", "Traite"]
-    assert res[1]["fiche"] == "BLANC Odile" and res[1]["envoye_le"] == "2026-09-24 19:15:00"
+    assert [m["statut"] for m in res] == ["En attente", "En attente", "Traite", "En attente"]
+    traite = next(m for m in res if m["statut"] == "Traite")
+    assert traite["fiche"] == "BLANC Odile" and traite["envoye_le"] == "2026-09-24 19:15:00"
 
 
 def test_jours_de_classe_septembre(conn):
