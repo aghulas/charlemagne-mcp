@@ -250,6 +250,23 @@ classées, 12 explorées. Résultat dans le code :
   production), référentiels nationaux (`TAB_ETAB_ORI`, `TAB_VILLE`, `TAB_COMMUNE` : 180 000 lignes).
 Tests : `tests/test_referentiels_enrichissements.py` (données synthétiques).
 
+## Vie scolaire : emploi du temps et appels (fait, 04/10/2026)
+- `emploi_du_temps_classe(classe, date_debut=None, date_fin=None)` (`tools/vie_scolaire.py`) : horaires
+  applicables (`VS_HORAIRE_CLASSE` s'ils existent, sinon `VS_HORAIRE`), semaine type la plus récente
+  (`VS_EDT_TYPE_COURS` + `VS_EDT_TYPE_PROF`/`VS_EDT_TYPE_SALLE`, semaine A/B, nombre de cours sans
+  matière) et, si une date est donnée, cours générés (`VS_EDT_COURS` + `VS_EDT_PROF`/`VS_EDT_SALLE`) avec
+  le calendrier A/B (`VS_EDT_ALTERNANCES`). `classe` = id, code (`CM2A`) ou libellé (`CM2 A`).
+- `appels_enseignants(date_debut, date_fin, classe, detail_absences=False)` : appels saisis dans
+  EcoleDirecte et intégrés (`VS_APPEL_PROF`), par classe et demi-journée, avec récapitulatif ;
+  `detail_absences` ajoute les élèves absents (`VS_ABSENCE_JOUR`).
+- Constats utiles (04/10/2026) : l'import EDT de Charlemagne **recale à l'import** (pas à la génération)
+  tout début/fin à 10 min ou moins des bornes des horaires de l'**établissement** (`VS_HORAIRE`), même
+  quand la classe a ses propres horaires ; les bornes de récréation ne recalent rien. Charlemagne garde
+  **un seul appel par enseignant, classe et horodatage de saisie à la seconde** : deux demi-journées
+  envoyées dans la même seconde n'en font qu'une dans `VS_APPEL_PROF` (les absences, elles, sont toutes
+  dans `VS_ABSENCE`).
+Tests : `tests/test_vie_scolaire.py` (données synthétiques).
+
 ## Règles non négociables
 - Jamais de concaténation de chaînes SQL — requêtes paramétrées uniquement (`sqlite3` avec `?`)
 - Jamais d'identifiants en dur dans le code — variables d'environnement / config uniquement
@@ -266,6 +283,7 @@ charlemagne-mcp/
 │   ├── referentiels.py                  # libelles (liens, CSP, situation fam.), enseignants/classe, anciennete
 │   ├── modifications.py                 # modifications_ecoledirecte_en_attente (COM_JOURNAL_MODIF)
 │   ├── calendrier.py                    # jours_de_classe (VS_CONGE, VS_TAB_PERIODES)
+│   ├── vie_scolaire.py                  # emploi_du_temps_classe, appels_enseignants (VS_EDT_*, VS_APPEL_PROF)
 │   ├── regles_facturation.py            # moteur commun : lignes attendues, prorata au mois (regles JSON)
 │   ├── audit_facturation.py             # audit_de_facturation (regles : CHARLEMAGNE_REGLES_FACTURATION)
 │   ├── suivi_facturation.py             # regularisations_a_preparer, suivi_echeanciers (cours d'annee)

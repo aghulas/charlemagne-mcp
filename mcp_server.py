@@ -32,6 +32,7 @@ from tools import (
     personnels,
     responsables,
     suivi_facturation,
+    vie_scolaire,
 )
 
 INSTRUCTIONS = (
@@ -417,6 +418,59 @@ def register_tools(server: MCPServer) -> None:
             res = calendrier.jours_de_classe(conn, id_classe=id_classe)
             if not res:
                 return {"error": "VS_CONGE ou VS_TAB_PERIODES absentes de la base."}
+            res["note"] = "Base a jour a la date du dernier export Charlemagne charge, pas en temps reel."
+            return res
+        finally:
+            conn.close()
+
+
+    @server.tool(
+        description=(
+            "Emploi du temps d'une classe dans Charlemagne Vie Scolaire : horaires applicables "
+            "(horaires de la classe s'ils sont parametres, sinon ceux de l'etablissement), semaine "
+            "type la plus recente (cours par jour avec matiere, enseignants, salles, semaine A/B) et, "
+            "si date_debut est donnee, les cours generes sur la periode (7 jours par defaut) avec le "
+            "calendrier des semaines A/B. classe = identifiant, code (CM2A) ou libelle (CM2 A). "
+            "Sert a verifier un import d'emploi du temps avant/apres transfert vers EcoleDirecte. "
+            "Lecture seule, a la date du dernier export."
+        )
+    )
+    def emploi_du_temps_classe(
+        classe: str, date_debut: str | None = None, date_fin: str | None = None
+    ) -> dict:
+        """Emploi du temps d'une classe (semaine type + cours generes)."""
+        conn = get_connection()
+        try:
+            res = vie_scolaire.emploi_du_temps_classe(conn, classe, date_debut, date_fin)
+            if not res:
+                return {"error": "Tables d'emploi du temps (VS_EDT_*) absentes de la base."}
+            res["note"] = "Base a jour a la date du dernier export Charlemagne charge, pas en temps reel."
+            return res
+        finally:
+            conn.close()
+
+    @server.tool(
+        description=(
+            "Appels saisis dans EcoleDirecte et integres dans Charlemagne (Vie scolaire > Traitement "
+            "> Suivi des appels enseignants) : un appel par classe et par demi-journee, avec effectif, "
+            "nombre d'absents, date de saisie et d'integration, et un recapitulatif par classe. "
+            "Filtres optionnels : date_debut, date_fin (AAAA-MM-JJ), classe. detail_absences=true "
+            "ajoute les eleves absents de chaque demi-journee (controle cible uniquement). "
+            "Lecture seule, a la date du dernier export."
+        )
+    )
+    def appels_enseignants(
+        date_debut: str | None = None,
+        date_fin: str | None = None,
+        classe: str | None = None,
+        detail_absences: bool = False,
+    ) -> dict:
+        """Appels integres depuis EcoleDirecte."""
+        conn = get_connection()
+        try:
+            res = vie_scolaire.appels_enseignants(conn, date_debut, date_fin, classe, detail_absences)
+            if not res:
+                return {"error": "VS_APPEL_PROF absente de la base."}
             res["note"] = "Base a jour a la date du dernier export Charlemagne charge, pas en temps reel."
             return res
         finally:

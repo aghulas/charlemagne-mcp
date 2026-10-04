@@ -236,6 +236,14 @@ Une seule option utilisée : `OE_TYPE = 1`, `OE_CODE_MATIERE = 0302` = **ANGLAIS
 
 Activités paramétrées : `MATIN` (Garderie Matin), `MIDI` (Restauration du midi), `SOIR` (Restauration du Soir), `ETUDE` (Etude / Garderie Soir), `ATELIERANGLAIS`, `ATELIERANGLAISSOIR`. `PA_SUIVI_JOURNALIER` ne contient que des essais du 23/09 ; porte-monnaie `GARDERIE`/`ETUDE` à 0 : **module non encore en production** — à revoir quand l'appel cantine/garderie sera pris dans EcoleDirecte (chantier « appel »).
 
+#### Emploi du temps — VS_HORAIRE (3), VS_HORAIRE_CLASSE (~105), VS_EDT_TYPE_ENTETE, VS_EDT_TYPE_COURS (~546), VS_EDT_COURS (~23 500), VS_EDT_ALTERNANCES (53)
+
+`VS_HORAIRE` : horaires de l'établissement (`HO_DEBUT`/`HO_FIN` `HHMM`, `HO_TYPE` cours/repas). `VS_HORAIRE_CLASSE` : « Affinage classe » (cours, récréation, repas par `IDCLASSE`), prioritaire pour l'affichage. `VS_EDT_TYPE_ENTETE` : semaines types (`LIBELLE` « Import EDT », `DESCRIPTION` « Import EDT du JJ/MM/AAAA ») — un nouvel `IDENTETE` à chaque import. `VS_EDT_TYPE_COURS` : `JOUR` (1 = lundi), `HEURE_DEBUT`/`HEURE_FIN`, `CODE_MATIERE` → `TAB_MATIERE.MA_CODE_GESTION`, `SEMAINE` (vide/A/B) ; enseignants et salles dans `VS_EDT_TYPE_PROF` / `VS_EDT_TYPE_SALLE` (colonnes `IDPERSONNEL`/`IDSALLE` de la table de cours restent à 0). `VS_EDT_COURS` : cours générés date par date (`ANNULE`, `MODIFIE`), liens `VS_EDT_PROF` / `VS_EDT_SALLE`. `VS_EDT_ALTERNANCES` : semaine A/B par lundi (`SE_DEBUT`), alternance continue y compris pendant les vacances. Les générations et suppressions de semaine type sont tracées dans `COM_LOGS` (module Vie Scolaire). Tool `emploi_du_temps_classe`.
+
+#### Appels — VS_APPEL_PROF (~300), VS_ABSENCE, VS_ABSENCE_JOUR
+
+`VS_APPEL_PROF` : un appel par enseignant/classe/demi-journée (`AP_COURS_DATE`, `AP_COURS_HEURE_DEBUT` 0800/1300, `AP_EFFECTIF`, `AP_NB_ABSENCE`, `AP_TOUSPRESENTS`, `AP_DATE` = horodatage de saisie, `AP_DATE_INTEGRATION`). Clé côté Charlemagne : enseignant + classe + `AP_DATE` à la seconde (deux appels saisis la même seconde fusionnent). `VS_ABSENCE` : absences (`AB_ORIGINE = AppelEd`, demi-journées consécutives fusionnées, `AB_NB_DEMIJ`) ; `VS_ABSENCE_JOUR` : détail par jour (`AJ_DEMIJ_AM`, `AJ_DEMIJ_PM`). Journal d'intégration : `COM_LOGS` titres « Appel enseignant » et « Appels ED ». Tool `appels_enseignants`.
+
 #### INS_DOC_A_SIGNER — documents des inscriptions en ligne (3 lignes)
 
 `Convention de Scolarisation`, `Reglement Financier`, `Reglement Interieur`, créés le 28/09/2026 (`HASH` du document). Paramétrage des documents à signer par les familles.
