@@ -281,6 +281,25 @@ Activités paramétrées : `MATIN` (Garderie Matin), `MIDI` (Restauration du mid
 
 `ADM_PARAMETRES_LISTES`, `ADM_LISTE_ENTETE`, `ADM_STAT_ENTETE`, `ADM_PROFS_COMPOSITION`, `ADM_PROFS_EDITION`, `ADM_BADGE_CHAMPS`, `ADM_BADGE_ENTETE`, `ADM_ETIQUETTES`, `ADM_TROMBIS`, `TAB_BADGE_CONFIG`, `VS_EDITION`, `VS_EDT_COULEURS`, `VS_SALLES`, `VS_LOCALISATION`, `TAB_SITE`, `VS_PARAMETRE`, `VS_PARAMETRES_ETAB`, `VS_PROFIL`, `VS_APPEL_PROF` (3 appels d'essai), `DASH_CONFIGURATION`, `PA_PREFERENCES`, `PA_UTILISATEUR`, `PA_PDP_PARAM`, `PA_FACTU_PMONNAIE`, `FAC_STAT_CHAMP`, `COM_MESSAGES_PREDEFINIS`.
 
+### Évolution des exports du 03 au 04/10/2026
+
+- **Vie Scolaire en production** : emploi du temps importé (`VS_EDT_TYPE_COURS` 546 cours types, `VS_EDT_COURS` 23 532 cours
+  datés et leurs tables `_PROF`/`_SALLE`, `VS_EDT_ALTERNANCES`, `VS_HORAIRE(_CLASSE)`, `VS_PARAMETRES_CLASSE`, `VS_IMPORT_PARAM`,
+  12 matières du primaire ajoutées à `TAB_MATIERE`) ; appel de septembre intégré (`VS_APPEL_PROF` 299 appels du 01 au 29/09,
+  `VS_ABSENCE` 86 absences, `VS_ABSENCE_JOUR` 126 ; `AP_NB_ABSENCE` total = 224 = « Absence=224 » du journal d'import). Toutes
+  les absences sont non justifiées (`AB_JUSTIF = 0`). Créneaux : `0800-1200` et `1300-1700`.
+- **Suppression de quatre classes vides** (`GSA` 17, `PSA` 19, `GS` 22 ; `GSB` 18 renommée `GS`) : aucune incidence sur les
+  élèves ni sur les factures, mais Charlemagne a supprimé en cascade leurs grilles (`FAC_GRILLE_PRIX` −129, `FAC_GRILLE_COMPTE`
+  −125), leurs filières (`COM_FORM_MULTIPLE`), un enseignant principal, des préférences d'affichage (`VS_PROFIL`) — et
+  **remis à `IDCLASSE = 0` 180 lignes d'`ADM_HISTO_CLASSE_MEF`** (parcours 2021-2022 → 2025-2026) : le niveau
+  (`CODE_MEF_INTERNE`) reste, le lien vers la classe de l'époque est perdu. Ne pas supprimer d'autres classes d'années
+  passées si l'historique compte.
+- Module Passage : `PA_PDP`, `PA_PDP_PARAM` (paramètres d'impression de tickets), `PA_UTILISATEUR` vidées — sans effet tant
+  que le module n'est pas utilisé.
+- `COM_PREFERENCES.CONSO_TOKEN_OPENAI` (mis à jour chaque jour, valeur vide, compteur 0) et `COM_METRIC_OAI` (vide) :
+  Charlemagne embarque des fonctions s'appuyant sur OpenAI ; non utilisées à ce jour.
+- Nouvelle table exportée `VS_EDT_TYPE_COURS_COMMENTAIRE` (vide) : 620 tables chargées.
+
 ### Suites proposées — état au 03/10/2026
 
 1. **Fait** : tool `modifications_ecoledirecte_en_attente` sur `COM_JOURNAL_MODIF` (`tools/modifications.py`), interprétation
