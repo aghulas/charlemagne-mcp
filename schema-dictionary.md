@@ -346,10 +346,13 @@ Ce que cela a apporté :
   tranche de revenu A/B, 5 = personnel ENS_SM/SAL_SM/ENS_EC/SAL_EC) ; la grille de prix est par période (`GP_PERIODE`).
 - **Libellés de l'éditeur** pour chaque colonne (ex. `EL_55_IDELEVE` « Ancien identifiant élève », `EL_PUPILLE`,
   `EL_BOURSE*`) : dans le rapport privé — à consulter avant d'interpréter une colonne inconnue.
-- **Dump incomplet** : 42 tables exportées manquent dans la structure lue (`ADM_ANCIEN` … `ADM_ICP_SAISIE`, dont
-  `ADM_GED_INDEX`, `ADM_HISTO_CLASSE_MEF`, `ADM_ENCAISSEMENT`, `ADM_CURSUS`) — probablement les tables du premier essai
-  d'import, créées dans une autre base. À reprendre côté PC Windows, puis refaire tourner `comparer_structure.py`.
-  Idem pour `Compta2.wdd` (base Comptabilité) quand elle aura été importée.
+- **Dump complet le 05/10 au soir** (697 tables, les 42 `ADM_*` manquantes rattrapées) : les 620 tables de l'export
+  sont toutes décrites. **Toutes les clés déclarées sont désormais livrées avec le loader** (`loader/cles_declarees.json`,
+  632 tables, lu après `COMPOSITE_KEYS` et avant la 1ère colonne du CSV) : 92 tables **vides** aujourd'hui avaient une
+  clé de première colonne fausse (ex. `FAC_GESTION_ELEVE` = `IDELEVE` + `IDRESPONSABLE`, `COM_GROUPE_ELEVE`,
+  `VS_ABSENCE_MOTIF`, `PA_SUIVI_CONSOMMATEUR_PLUS1`, `ADM_HISTO_PAIEMENT`…) et auraient basculé sur `_rowkey` ou
+  fusionné des lignes le jour où elles se remplissent ; reconstruites à vide. Écart clé éditeur / clé SQLite : 0 sur 620.
+  Reste `Compta2.wdd` (base Comptabilité) quand elle aura été importée.
 
 ## Historique — exploration HFSQL/ODBC (abandonnée)
 

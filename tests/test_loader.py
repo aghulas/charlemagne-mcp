@@ -145,3 +145,30 @@ def test_fichier_sans_en_tete_ignore(tmp_path, monkeypatch, capsys):
     (csv / "VIDE.csv").write_text("", encoding="utf-16-le")
     out = charger(csv, db, monkeypatch, capsys)
     assert "1 fichier(s) sans en-tete ignore(s)" in out
+
+
+def test_cle_declaree_par_l_editeur(tmp_path, monkeypatch, capsys):
+    """La cle de l'analyse WinDev (cles_declarees.json) prime sur la 1ere
+    colonne du CSV ; une cle absente des colonnes est ignoree."""
+    csv, db = tmp_path / "csv", tmp_path / "b.db"
+    csv.mkdir()
+    ecrire_csv(csv, "COM_GROUPE_ELEVE", ["IDGROUPE,IDELEVE", "1,10", "1,11"])
+    ecrire_csv(csv, "COM_AUTRE", ["IDAUTRE,LIB", "9,z"])
+    monkeypatch.setattr(L, "DECLARED_KEYS", {
+        "COM_GROUPE_ELEVE": ["IDGROUPE", "IDELEVE"],
+        "COM_AUTRE": ["COLONNE_INEXISTANTE"],
+    })
+    out = charger(csv, db, monkeypatch, capsys)
+    section_rowkey = out.split("cle de secours _rowkey")[1] if "cle de secours _rowkey" in out else ""
+    assert "COM_GROUPE_ELEVE" not in section_rowkey
+    assert lignes(db, "select count(*) from COM_GROUPE_ELEVE") == [(2,)]
+    pk = [r[1] for r in lignes(db, 'pragma table_info("COM_GROUPE_ELEVE")') if r[5] > 0]
+    assert pk == ["IDGROUPE", "IDELEVE"]
+    pk2 = [r[1] for r in lignes(db, 'pragma table_info("COM_AUTRE")') if r[5] > 0]
+    assert pk2 == ["IDAUTRE"]
+
+
+def test_fichier_de_cles_declarees_charge():
+    """Le fichier livre avec le loader se lit et contient les cles connues."""
+    assert L.DECLARED_KEYS["FAC_GESTION_ELEVE"] == ["IDELEVE", "IDRESPONSABLE"]
+    assert L.load_declared_keys(Path("/inexistant.json")) == {}

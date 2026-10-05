@@ -47,8 +47,11 @@ Trois étapes distinctes, à ne pas fusionner (cf. `Plan_MCP_Charlemagne.md`, Ph
      `Eleves.wdd` (lue depuis une base HFSQL vide, outillage dans le dépôt privé `charlemagne-tools`)
      a donné les vraies clés de 10 tables (`FAC_HISTO_ELEVE` = élève + responsable + validation,
      `FAC_GRILLE_PRIX` + période, `COM_BADGE` = `IDBADGE`…, voir `schema-dictionary.md`). Il ne reste
-     que 9 tables sur `_rowkey`, toutes sans clé déclarée par l'éditeur. Avant d'ajouter une clé dans
-     `COMPOSITE_KEYS`, consulter cette analyse plutôt que de deviner.
+     que 9 tables sur `_rowkey`, toutes sans clé déclarée par l'éditeur. **Toutes les clés déclarées
+     sont livrées dans `loader/cles_declarees.json`** (632 tables), consulté après `COMPOSITE_KEYS` et
+     avant la 1ère colonne du CSV — y compris pour les tables encore vides, dont 92 auraient eu une
+     clé fausse en se remplissant. Ne pas deviner une clé : la lire dans ce fichier, et le régénérer
+     depuis `charlemagne-tools/scripts/hfsql` si l'analyse change.
    - Un CSV vide (en-tête seul) crée la table, ou la vide si elle avait des lignes : `FAC_GESTION_*`
      redevient vide après validation. Si la clé d'une table en base change, la table est reconstruite.
    - **Réplication complète (02/10/2026, soir)** : les lignes en base absentes de l'export sont

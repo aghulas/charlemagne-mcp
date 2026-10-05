@@ -47,6 +47,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import sqlite3
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -166,10 +167,28 @@ def load_csv(csv_path: Path) -> pd.DataFrame | None:
     return df
 
 
+def load_declared_keys(path: Path | None = None) -> dict:
+    """Cles primaires declarees par l'editeur (analyse WinDev), fichier
+    loader/cles_declarees.json. Vide si le fichier manque."""
+    path = path or DECLARED_KEYS_FILE
+    try:
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return {t: list(k) for t, k in data.get("tables", {}).items() if k}
+
+
+DECLARED_KEYS_FILE = Path(__file__).with_name("cles_declarees.json")
+DECLARED_KEYS = load_declared_keys()
+
+
 def resolve_key_cols(table: str, df: pd.DataFrame) -> list:
-    declared = COMPOSITE_KEYS.get(table)
-    if declared and all(c in df.columns for c in declared):
-        return declared
+    """Cle d'upsert : COMPOSITE_KEYS (verifiee a la main), puis la cle declaree
+    par l'editeur, puis la 1ere colonne du CSV."""
+    for source in (COMPOSITE_KEYS, DECLARED_KEYS):
+        declared = source.get(table)
+        if declared and all(c in df.columns for c in declared):
+            return declared
     return [df.columns[0]]
 
 
