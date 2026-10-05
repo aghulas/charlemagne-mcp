@@ -63,17 +63,30 @@ ROWKEY_COL = "_rowkey"
 COMPOSITE_KEYS = {
     "FAC_HISTO_FAMILLE": ["IDVALIDATION", "IDRESPONSABLE"],
     "FAC_COMPTA_FAMILLE": ["IDVALIDATION", "IDRESPONSABLE"],
-    "FAC_HISTO_ELEVE": ["IDVALIDATION", "IDELEVE"],  # NB: encore 12 doublons residuels, voir schema-dictionary.md
+    # Cle declaree dans l'analyse HFSQL (HE_CLEF_ELEVE_RESP_VALID) : un eleve
+    # peut etre facture a deux responsables pour une meme validation, d'ou les
+    # 12 "doublons" observes avec (IDVALIDATION, IDELEVE).
+    "FAC_HISTO_ELEVE": ["IDELEVE", "IDRESPONSABLE", "IDVALIDATION"],
     "COM_LIENER": ["IDRESPONSABLE", "IDELEVE"],  # table de liaison eleve <-> responsable(s)
     # Ajouts verifies (cf. schema-dictionary.md, section "18 tables ignorees") :
     # la 1ere colonne du CSV n'est pas la cle, ou une cle composite est necessaire.
     "COM_PERSONNELS": ["IDPERSONNEL"],  # 1ere colonne CSV = ID_UTILISATEUR, non fiable (doublons)
     "REC_ENVOI_ONDE": ["IDRECENVOIONDE"],
     "VS_EDITION_ZONES": ["IDZONE"],
-    "FAC_GRILLE_COMPTE": ["GC_CODE", "IDCLASSE"],
-    "FAC_GRILLE_PRIX": ["GP_CODE", "IDCLASSE"],
-    "ADM_PROFIL": ["ID_UTILISATEUR", "PR_TYPE"],
+    # Cles completes d'apres l'analyse HFSQL Eleves.wdd (05/10/2026, voir
+    # charlemagne-tools/scripts/hfsql) : la grille de prix est par periode,
+    # la grille de comptes par categorie de TVA, le profil par valeur.
+    "FAC_GRILLE_COMPTE": ["GC_CODE", "IDCLASSE", "ID_CATEGORIETVA"],
+    "FAC_GRILLE_PRIX": ["GP_CODE", "IDCLASSE", "GP_PERIODE"],
+    "ADM_PROFIL": ["ID_UTILISATEUR", "PR_TYPE", "PR_VALEUR"],
+    "FAC_QUOTIENT": ["QU_CODE", "QU_TYPE"],
     "REC_ENTREE_ELEVE": ["IDELEVE", "EE_DATE"],
+    # Tables dont la cle HFSQL n'est pas la 1ere colonne du CSV (analyse Eleves.wdd) :
+    "COM_BADGE": ["IDBADGE"],  # 1ere colonne = TYPE (ELEVE/ADULTE), non unique
+    "COM_FORM_MULTIPLE": ["FM_CL_IDENTIFIANT", "FM_FO_GESTION_CODE", "FM_FO_SPECIALITE"],
+    "FAC_GESTION_HISTO": ["IDGESTION_HISTO"],  # snapshot, mais cle stable
+    "INS_DOC_A_SIGNER": ["IDDOC_A_SIGNER"],  # 1ere colonne = LIBELLE
+    "VS_PARAMETRES_CLASSE": ["ID_PARAM_ETAB"],  # 1ere colonne = IDCLASSE
     # Droits EcoleDirecte des adultes : ID_PERSO_ED est unique (362/362 lignes,
     # export du 30/09/2026) ; la 1ere colonne (IDPERSONNEL) ne l'est pas.
     "COM_PERSONNELS_ED": ["ID_PERSO_ED"],
@@ -84,11 +97,11 @@ COMPOSITE_KEYS = {
     # Forfaits d'activites (cantine, etude, garderie...) : une ligne par
     # activite et par eleve.
     "PA_SUIVI_CONSOMMATEUR": ["SI_CODE", "TYPE_PASSANT", "IDPASSANT"],
-    # Sans cle naturelle connue -> cle de secours _rowkey automatiquement :
-    # FAC_COMPTA_GENERAL (agregat comptable, doublons exacts legitimes),
-    # FAC_GESTION_HISTO (lignes manuelles de la facturation complementaire),
-    # COM_LOGS, ADM_ANC_CURSUS, ADM_LISTES_RUBRIQUES, ADM_STAT_RUBRIQUES,
-    # COM_BADGE, COM_FORM_MULTIPLE, VS_EDITION_PARAM...
+    # Sans cle declaree dans l'analyse HFSQL -> cle de secours _rowkey
+    # automatiquement : FAC_COMPTA_GENERAL (agregat comptable, doublons exacts
+    # legitimes), COM_LOGS, ADM_ANC_CURSUS, ADM_LISTES_RUBRIQUES,
+    # ADM_STAT_RUBRIQUES, FAC_FORMULE_MOT, VS_APPEL_PROF, VS_EDITION_PARAM,
+    # VS_IMPORT_PARAM.
 }
 
 # Tables regenerees integralement par Charlemagne a chaque preparation de

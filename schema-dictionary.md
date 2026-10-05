@@ -116,7 +116,7 @@ montants) plus :
 
 | Colonne | Sens |
 |---|---|
-| `IDVALIDATION`, `IDELEVE` | Clé composite **non garantie unique** : 12 lignes sur 1113 partagent la même clé avec des montants différents (dont des paires signe opposé, ex. `643.66` / `-643.66` — probablement une ligne d'origine + une correction/annulation). Une 3e composante de clé existe probablement mais n'a pas été identifiée dans les colonnes disponibles. **Table exclue du chargement automatique tant que ce point n'est pas résolu** (voir `loader/load_charlemagne.py`, `COMPOSITE_KEYS`) |
+| `IDELEVE`, `IDRESPONSABLE`, `IDVALIDATION` | Clé déclarée par l'éditeur (`HE_CLEF_ELEVE_RESP_VALID`, analyse HFSQL `Eleves.wdd` lue le 05/10/2026). Les 12 « doublons » observés avec (`IDVALIDATION`, `IDELEVE`) étaient des élèves facturés à **deux responsables** pour une même validation (paires de signe opposé = transfert d'un responsable à l'autre). Chargée en upsert avec cette clé depuis le 05/10/2026 (0 doublon sur 411 lignes). |
 | `HE_APAYER_ELEVE` | Montant à payer pour cet élève |
 
 ### FAC_HISTO_LIGNE — lignes de détail (5590 lignes)
@@ -312,6 +312,44 @@ Activités paramétrées : `MATIN` (Garderie Matin), `MIDI` (Restauration du mid
 4. **Ouvert** : reprendre le module Passage (`PA_*`) quand l'appel cantine/garderie sera en production.
 5. **Ouvert** : aucun encaissement n'est exporté ; le signal d'impayé (`TYPE_ENCAISSEMENT = 'IMPAYE'` vu côté ODBC) n'a pas
    d'équivalent dans l'export CSV.
+
+### Structure déclarée par l'éditeur — analyse WinDev `Eleves.wdd` (05/10/2026)
+
+Méthode : l'analyse WinDev livrée avec Charlemagne (`Eleves.wdd`, sans mot de passe) a été importée dans une base HFSQL
+**vide** via le Centre de Contrôle HFSQL, puis la structure a été lue par ODBC (scripts et résultat dans le dépôt privé
+`charlemagne-tools/scripts/hfsql/`, rapport `rapport_structure_eleves.md`). Aucune donnée réelle n'a transité : seules
+les tables, colonnes, clés et libellés de l'éditeur. Les .wdd ne contiennent pas le mot de passe des fichiers de
+production, l'accès direct reste impossible (voir « Historique » ci-dessous).
+
+Ce que cela a apporté :
+
+- **Clés primaires corrigées dans le loader** (`COMPOSITE_KEYS`, 05/10/2026) : `FAC_HISTO_ELEVE` = (`IDELEVE`,
+  `IDRESPONSABLE`, `IDVALIDATION`) — fin des 12 doublons ; `FAC_GRILLE_PRIX` + `GP_PERIODE` ; `FAC_GRILLE_COMPTE` +
+  `ID_CATEGORIETVA` ; `ADM_PROFIL` + `PR_VALEUR` ; `FAC_QUOTIENT` = (`QU_CODE`, `QU_TYPE`) ; `COM_BADGE` = `IDBADGE` ;
+  `COM_FORM_MULTIPLE` = (`FM_CL_IDENTIFIANT`, `FM_FO_GESTION_CODE`, `FM_FO_SPECIALITE`) ; `FAC_GESTION_HISTO` =
+  `IDGESTION_HISTO` ; `INS_DOC_A_SIGNER` = `IDDOC_A_SIGNER` ; `VS_PARAMETRES_CLASSE` = `ID_PARAM_ETAB`. Toutes
+  vérifiées uniques sur l'export du 04/10. Les 9 tables encore sur `_rowkey` (`FAC_COMPTA_GENERAL`, `COM_LOGS`,
+  `ADM_ANC_CURSUS`, `ADM_LISTES_RUBRIQUES`, `ADM_STAT_RUBRIQUES`, `FAC_FORMULE_MOT`, `VS_APPEL_PROF`,
+  `VS_EDITION_PARAM`, `VS_IMPORT_PARAM`) n'ont **pas de clé déclarée par l'éditeur non plus** : le repli est légitime.
+- **Aucune liaison (intégrité référentielle) déclarée** dans l'analyse : le modèle relationnel repose sur les conventions
+  de nommage (`IDELEVE`, `IDRESPONSABLE`, `IDCLASSE`…), ce qui confirme l'approche de ce dictionnaire.
+- **Colonnes** : l'export CSV est complet, aux colonnes binaires près (37 tables : `DOCUMENT`, `IMAGE`, `PHOTO`,
+  `SIGNATURE`, `GLYPHE`, `PJ`, `REGLEMENT_INTERIEUR` ne sont pas exportées — normal). Seule anomalie de casse :
+  `PA_SUIVI_INSCRIPTION.Si_DELAI_JOUR2/3` dans le CSV pour `SI_DELAI_JOUR2/3` dans l'analyse.
+- **Tables jamais exportées** (77) : contrôle d'accès `CC_*` (dont `CC_JOURNAL`, `CC_UTILISATEURS` avec mots de passe),
+  formation continue / CFA `ENT2_CF*`, **infirmerie `INF_*`** (allergies, pathologies, vaccins, visites — données de santé
+  qu'il est heureux de ne pas voir dans l'export), `VS_APPEL_INTERNAT*`. Ne pas chercher à les obtenir.
+- **`COM_ELEVES.EL_NUM_SECU`** (numéro de sécurité sociale) existe dans l'export — vide pour les 510 élèves ; à ne jamais
+  exposer dans un tool, comme l'IBAN.
+- **Découvertes métier** : `COM_FORM_MULTIPLE` = classes à double niveau (`FM_CL_IDENTIFIANT` = `IDCLASSE`,
+  `FM_FO_GESTION_CODE` = niveau) : classes 16 (MS/PS), 20 (PS/TP), 21 (GS/MS) ; `FAC_QUOTIENT` est typé (`QU_TYPE` 4 =
+  tranche de revenu A/B, 5 = personnel ENS_SM/SAL_SM/ENS_EC/SAL_EC) ; la grille de prix est par période (`GP_PERIODE`).
+- **Libellés de l'éditeur** pour chaque colonne (ex. `EL_55_IDELEVE` « Ancien identifiant élève », `EL_PUPILLE`,
+  `EL_BOURSE*`) : dans le rapport privé — à consulter avant d'interpréter une colonne inconnue.
+- **Dump incomplet** : 42 tables exportées manquent dans la structure lue (`ADM_ANCIEN` … `ADM_ICP_SAISIE`, dont
+  `ADM_GED_INDEX`, `ADM_HISTO_CLASSE_MEF`, `ADM_ENCAISSEMENT`, `ADM_CURSUS`) — probablement les tables du premier essai
+  d'import, créées dans une autre base. À reprendre côté PC Windows, puis refaire tourner `comparer_structure.py`.
+  Idem pour `Compta2.wdd` (base Comptabilité) quand elle aura été importée.
 
 ## Historique — exploration HFSQL/ODBC (abandonnée)
 

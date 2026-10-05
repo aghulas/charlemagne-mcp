@@ -43,6 +43,12 @@ Trois étapes distinctes, à ne pas fusionner (cf. `Plan_MCP_Charlemagne.md`, Ph
      le flux « un clic » servait une base à 102 tables au lieu de 123 — sans `PA_SUIVI_CONSOMMATEUR`,
      `FAC_COMPTA_GENERAL`, `COM_PIECE_RECU`, `FAC_HISTO_ELEVE` — et l'audit, la fiche famille et la
      comparaison d'exports ne fonctionnaient plus.
+   - **Clés alignées sur l'analyse WinDev de l'éditeur (05/10/2026)** : la structure déclarée dans
+     `Eleves.wdd` (lue depuis une base HFSQL vide, outillage dans le dépôt privé `charlemagne-tools`)
+     a donné les vraies clés de 10 tables (`FAC_HISTO_ELEVE` = élève + responsable + validation,
+     `FAC_GRILLE_PRIX` + période, `COM_BADGE` = `IDBADGE`…, voir `schema-dictionary.md`). Il ne reste
+     que 9 tables sur `_rowkey`, toutes sans clé déclarée par l'éditeur. Avant d'ajouter une clé dans
+     `COMPOSITE_KEYS`, consulter cette analyse plutôt que de deviner.
    - Un CSV vide (en-tête seul) crée la table, ou la vide si elle avait des lignes : `FAC_GESTION_*`
      redevient vide après validation. Si la clé d'une table en base change, la table est reconstruite.
    - **Réplication complète (02/10/2026, soir)** : les lignes en base absentes de l'export sont
