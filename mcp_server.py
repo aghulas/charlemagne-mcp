@@ -28,6 +28,7 @@ from tools import (
     facturation,
     famille,
     historique_mails,
+    journal_ecoledirecte,
     modifications,
     personnels,
     responsables,
@@ -331,6 +332,30 @@ def register_tools(server: MCPServer) -> None:
             return {"error": str(exc)}
         finally:
             conn.close()
+
+    @server.tool(
+        description=(
+            "Journal des transferts Charlemagne -> EcoleDirecte (fichier 'EcoleDirecte Journal' du "
+            "serveur, copie locale CHARLEMAGNE_JOURNAL_ED ; pas dans l'export CSV) : pour chaque "
+            "transfert, date et heure, mode (automatique de nuit ou manuel), poste, etat des "
+            "replications par module, erreurs, et nombre de documents PDF envoyes. "
+            "publications_documents = transferts ayant publie des PDF dans l'espace Documents "
+            "d'EcoleDirecte (circulaires, factures, documents a signer), ce qui ne notifie PAS les "
+            "familles. Ni intitule ni destinataires : les lire avec ed_admin_documents_ecole "
+            "(connecteur EcoleDirecte). Filtres depuis/jusqu_a (AAAA-MM-JJ), "
+            "avec_documents_seulement."
+        )
+    )
+    def journal_transferts_ecoledirecte(depuis: str | None = None, jusqu_a: str | None = None,
+                                        avec_documents_seulement: bool = False,
+                                        limite: int = 50) -> dict:
+        """Transferts vers EcoleDirecte et documents PDF publies."""
+        try:
+            return journal_ecoledirecte.journal_transferts(depuis=depuis, jusqu_a=jusqu_a,
+                                                           avec_documents_seulement=avec_documents_seulement,
+                                                           limite=limite)
+        except ValueError as exc:
+            return {"error": str(exc)}
 
     @server.tool(
         description=(

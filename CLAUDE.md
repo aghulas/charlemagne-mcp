@@ -233,6 +233,18 @@ par envoi), du plus récent au plus ancien. Format de la table, relevé sur l'ex
 Le filtre `destinataire` revérifie la correspondance entrée par entrée (un LIKE sur la liste brute
 peut chevaucher deux adresses). Tests : `tests/test_historique_mails.py` (données synthétiques).
 
+`journal_transferts_ecoledirecte(depuis, jusqu_a, avec_documents_seulement, limite)`
+(`tools/journal_ecoledirecte.py`) : journal des transferts Charlemagne → EcoleDirecte, lu dans la
+copie locale du fichier texte `EcoleDirecte Journal <RNE>.txt` du partage serveur (variable
+`CHARLEMAGNE_JOURNAL_ED` ; ce fichier n'est pas dans l'export CSV, il arrive avec la sauvegarde du
+partage). Par transfert : début/fin, version, poste, mode (automatique de nuit / manuel),
+réplications par module, erreurs (message tronqué, sans l'URL du webservice), abandons, nombre de
+documents PDF envoyés. `publications_documents` liste les transferts qui ont publié des PDF dans
+l'espace Documents d'EcoleDirecte (circulaires, factures, documents à signer) — publication qui
+ne notifie pas les familles. Le journal ne donne ni intitulé ni destinataires : les lire côté
+EcoleDirecte (`ed_admin_documents_ecole`, connecteur ecoledirecte-admin-mcp). Fichier ANSI (cp1252)
+ou UTF-8. Tests : `tests/test_journal_ecoledirecte.py` (journal fictif).
+
 ## Enrichissements et nouveaux tools issus de l'inventaire des tables (fait, 03/10/2026)
 Inventaire complet des 119 tables peuplées dans `schema-dictionary.md` (§ Inventaire) : 68 tables
 classées, 12 explorées. Résultat dans le code :
@@ -297,7 +309,8 @@ charlemagne-mcp/
 │   ├── audit_facturation.py             # audit_de_facturation (regles : CHARLEMAGNE_REGLES_FACTURATION)
 │   ├── suivi_facturation.py             # regularisations_a_preparer, suivi_echeanciers (cours d'annee)
 │   ├── comparaison.py                   # comparer_exports (archives : CHARLEMAGNE_ARCHIVES_DIR)
-│   └── historique_mails.py              # historique_mails_charlemagne (COM_HISTORIQUE_MAILS)
+│   ├── historique_mails.py              # historique_mails_charlemagne (COM_HISTORIQUE_MAILS)
+│   └── journal_ecoledirecte.py          # journal_transferts_ecoledirecte (CHARLEMAGNE_JOURNAL_ED)
 ├── db/
 │   └── connection.py                    # connexion SQLite lecture seule (CHARLEMAGNE_DB ou defaut)
 ├── loader/
