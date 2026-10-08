@@ -103,6 +103,18 @@ def test_loader_refuse_un_fec_plus_court(tmp_path):
     assert L.charger(court, db, accepter_recul=True)["nb_lignes"] == 2
 
 
+def test_loader_accepte_une_ecriture_recente_supprimee(tmp_path):
+    # la derniere ecriture a ete supprimee dans Charlemagne : la periode recule de quelques lignes seulement
+    db = tmp_path / "c.db"
+    L.charger(fec_synthetique(tmp_path), db)
+    p = tmp_path / "123456789FEC20260831.txt"
+    lignes = p.read_bytes().decode("cp1252").split("\r\n")
+    garde = [l for l in lignes if "20261003" not in l]          # 4 lignes du 03/10 supprimees
+    p.write_bytes("\r\n".join(garde).encode("cp1252"))
+    r = L.charger(p, db)
+    assert r["periode_fin"] == "20261001" and r["nb_lignes"] == 9
+
+
 def test_loader_refuse_un_fec_desequilibre(tmp_path):
     p = tmp_path / "x.txt"
     p.write_text(ENTETE + "\n" + ligne("OD", "OD", "20260101", "4710000", "", "1", "x", 10, 0) + "\n", encoding="cp1252")

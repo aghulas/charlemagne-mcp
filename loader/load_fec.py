@@ -204,18 +204,36 @@ def precedent(db: Path) -> dict | None:
     return dict(zip(("fichier", "periode_debut", "periode_fin", "nb_lignes", "total_debit"), row))
 
 
+SEUIL_RECUL = 10   # au-dela, un FEC qui perd des ecritures recentes est un export borne trop tot
+
+
+def ecritures_apres(db: Path, date_fin: str) -> int:
+    conn = sqlite3.connect(db)
+    try:
+        return conn.execute("SELECT COUNT(*) FROM CPT_ECRITURE WHERE date_ecriture > ?", (date_fin,)).fetchone()[0]
+    except sqlite3.Error:
+        return 0
+    finally:
+        conn.close()
+
+
 def charger(fec: Path, db: Path, accepter_recul: bool = False) -> dict:
     ecritures = lire_fec(fec)
     r = resume(ecritures)
     if abs(r["total_debit"] - r["total_credit"]) > 0.01:
         raise ValueError(f"FEC desequilibre : debit {r['total_debit']} / credit {r['total_credit']}")
     avant = precedent(db)
-    if (avant and not accepter_recul and r["periode_fin"] and avant["periode_fin"]
-            and r["periode_fin"] < avant["periode_fin"]):
-        raise ValueError(
-            f"FEC plus court que celui deja charge : ecritures jusqu'au {r['periode_fin']} contre "
-            f"{avant['periode_fin']}. Refaire l'export jusqu'a la date du jour (periode par defaut de "
-            f"l'ecran DGI/FEC = fin de l'exercice) ou relancer avec --accepter-recul.")
+    if avant and not accepter_recul and r["periode_fin"]:
+        # Le FEC ne contient pas la periode demandee, seulement les ecritures : la derniere peut
+        # reculer legitimement (ecriture recente supprimee). Un export borne trop tot (l'ecran
+        # DGI/FEC propose la fin de l'exercice) se reconnait aux ecritures deja chargees qu'il perd.
+        perdues = ecritures_apres(db, r["periode_fin"])
+        if perdues > SEUIL_RECUL:
+            raise ValueError(
+                f"FEC plus court que celui deja charge : ecritures jusqu'au {r['periode_fin']}, alors que "
+                f"{perdues} ecritures deja chargees sont posterieures (jusqu'au {avant['periode_fin']}). "
+                f"Refaire l'export jusqu'a la date du jour (periode par defaut de l'ecran DGI/FEC = fin de "
+                f"l'exercice) ou relancer avec --accepter-recul.")
     db.parent.mkdir(parents=True, exist_ok=True)
     tmp = db.with_name(db.name + ".tmp")
     if tmp.exists():
