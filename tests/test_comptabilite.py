@@ -91,6 +91,18 @@ def test_loader_resume_et_paie_masquee(tmp_path):
     assert sqlite3.connect(db).execute("SELECT COUNT(*) FROM CPT_ECRITURE").fetchone()[0] == 13
 
 
+def test_loader_refuse_un_fec_plus_court(tmp_path):
+    db = tmp_path / "c.db"
+    L.charger(fec_synthetique(tmp_path), db)
+    court = tmp_path / "court.txt"
+    court.write_text(ENTETE + "\n" + ligne("OD", "OD", "20260101", "4710000", "", "1", "x", 10, 0) + "\n"
+                     + ligne("OD", "OD", "20260101", "4710001", "", "1", "x", 0, 10) + "\n", encoding="cp1252")
+    with pytest.raises(ValueError, match="plus court"):
+        L.charger(court, db)
+    assert sqlite3.connect(db).execute("SELECT COUNT(*) FROM CPT_ECRITURE").fetchone()[0] == 13
+    assert L.charger(court, db, accepter_recul=True)["nb_lignes"] == 2
+
+
 def test_loader_refuse_un_fec_desequilibre(tmp_path):
     p = tmp_path / "x.txt"
     p.write_text(ENTETE + "\n" + ligne("OD", "OD", "20260101", "4710000", "", "1", "x", 10, 0) + "\n", encoding="cp1252")

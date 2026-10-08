@@ -204,12 +204,18 @@ def precedent(db: Path) -> dict | None:
     return dict(zip(("fichier", "periode_debut", "periode_fin", "nb_lignes", "total_debit"), row))
 
 
-def charger(fec: Path, db: Path) -> dict:
+def charger(fec: Path, db: Path, accepter_recul: bool = False) -> dict:
     ecritures = lire_fec(fec)
     r = resume(ecritures)
     if abs(r["total_debit"] - r["total_credit"]) > 0.01:
         raise ValueError(f"FEC desequilibre : debit {r['total_debit']} / credit {r['total_credit']}")
     avant = precedent(db)
+    if (avant and not accepter_recul and r["periode_fin"] and avant["periode_fin"]
+            and r["periode_fin"] < avant["periode_fin"]):
+        raise ValueError(
+            f"FEC plus court que celui deja charge : ecritures jusqu'au {r['periode_fin']} contre "
+            f"{avant['periode_fin']}. Refaire l'export jusqu'a la date du jour (periode par defaut de "
+            f"l'ecran DGI/FEC = fin de l'exercice) ou relancer avec --accepter-recul.")
     db.parent.mkdir(parents=True, exist_ok=True)
     tmp = db.with_name(db.name + ".tmp")
     if tmp.exists():
@@ -243,10 +249,12 @@ def main() -> int:
         if os.environ.get("CHARLEMAGNE_DB") else DEFAULT_DB)
     parser.add_argument("--db", default=defaut,
                         help="Base SQLite a (re)creer (defaut : CHARLEMAGNE_COMPTA_DB, sinon a cote de CHARLEMAGNE_DB)")
+    parser.add_argument("--accepter-recul", action="store_true",
+                        help="charger meme si la periode s'arrete avant celle du FEC deja charge")
     args = parser.parse_args()
     fec, db = Path(args.fec).expanduser(), Path(args.db).expanduser()
     try:
-        r = charger(fec, db)
+        r = charger(fec, db, accepter_recul=args.accepter_recul)
     except (OSError, ValueError) as exc:
         print(f"ERREUR : {exc}", file=sys.stderr)
         return 1
@@ -259,8 +267,6 @@ def main() -> int:
     if a:
         print(f"  chargement precedent : {a['fichier']}, {a['periode_debut']} -> {a['periode_fin']}, "
               f"{a['nb_lignes']} lignes ({r['nb_lignes'] - a['nb_lignes']:+d})")
-        if r["periode_fin"] < a["periode_fin"]:
-            print("  ATTENTION : la periode chargee s'arrete avant la precedente.")
     return 0
 
 
