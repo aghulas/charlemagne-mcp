@@ -387,4 +387,11 @@ du debut de l'exercice ouvert a la date du jour), depose dans le dossier d'echan
   Valide le 08/10/2026 sur le FEC reel (8 312 lignes, 01/09/2025 -> 07/10/2026) : 23 familles en retard
   dont les 4 impayes de septembre non regularises (prelevement, 220 a 306 EUR), 18 familles « Cheque » sans
   cheque saisi, 1 ancien compte avec impayes ; 14 familles a impaye regularise.
+- **Garde-fou de periode** : l'ecran DGI/FEC propose la fin de l'exercice ; un FEC qui ferait perdre plus de
+  10 ecritures deja chargees (`SEUIL_RECUL`) est refuse (`--accepter-recul` pour forcer). On compte les ecritures
+  perdues et non la date de la derniere ecriture : supprimer une ecriture recente fait reculer cette date (constate
+  le 08/10/2026 avec l'OD d'essai `TESTMCP1`).
+- **Chargement automatique sur le Mac** : veilleur launchd `fr.saintemarie.charlemagne-load-fec` sur le dossier
+  d'echange `compta` -> `charlemagne_load_fec.sh` -> ce loader (scripts dans le depot prive `charlemagne-tools`,
+  `scripts/serveur-aplim/mac/`).
 Tests : `tests/test_comptabilite.py` (donnees synthetiques). Ne jamais commiter un FEC (`*FEC*.txt` ignore).
