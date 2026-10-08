@@ -157,7 +157,8 @@ Bout en bout : `scripts/smoke_test_audit.py` (vraie base, ne rien commiter de sa
 Une pièce déposée par une famille (ou pour elle, via `ed_admin_deposer_piece`) et récupérée par
 Charlemagne est « verrouillée » dans EcoleDirecte : aucun écran ni endpoint EcoleDirecte ne permet de
 la télécharger, remplacer ou supprimer, et le fichier est chiffré sur le serveur Aplim. La suppression
-se fait dans Charlemagne Administratif (fiche du responsable/élève, pièces du dossier) : effet
+se fait dans Charlemagne Administratif, menu **Tables › Gestion des pièces du dossier › Listes des pièces ›
+Gestion des documents › Modifier › Supprimer** (chemin relevé par Rémi le 08/10/2026) : effet
 **immédiat** dans EcoleDirecte (`ed_admin_pieces_etat` → non déposée, déverrouillée, la famille peut
 redéposer), et à l'export suivant `COM_PIECE_RECU` passe à « Non Reçue » et l'entrée GED disparaît.
 Pour contrôler le contenu d'une pièce (année scolaire, nature) : seules les pièces déposées par l'école
