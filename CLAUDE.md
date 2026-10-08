@@ -355,3 +355,36 @@ Deployment Center, branché sur ce dépôt.
 Mets ce fichier à jour à chaque fois que tu découvres une subtilité du schéma ou de l'export (ex. une
 table sans clé primaire propre, un encodage particulier, un décalage entre l'export CSV et les colonnes
 attendues) — c'est ce genre de détail qui évite de retomber dans la même erreur.
+
+## Comptabilite : FEC -> SQLite, encaissements et impayes (fait, 08/10/2026)
+Le module Comptabilite de Charlemagne n'a ni export CSV de ses tables ni ligne de commande (essais du
+04/10 : `ADMDuplication` refuse le dossier comptable, aucune tache planifiee compta). Source retenue :
+l'export **Outils > DGI/FEC**, fait a la main en session RDP (destinataire « Non DGI », type Texte, periode
+du debut de l'exercice ouvert a la date du jour), depose dans le dossier d'echange du Mac.
+- `loader/load_fec.py <FEC> [--db ...]` : remplace entierement la base comptable (`CPT_ECRITURE`,
+  `CPT_EXPORT`), construite dans un fichier temporaire puis substituee. Base par defaut :
+  `CHARLEMAGNE_COMPTA_DB`, sinon `comptabilite_consolidee.db` **a cote de `CHARLEMAGNE_DB`** (meme regle
+  dans `db/connection_compta.py` : aucune configuration a ajouter a Claude Desktop). Refuse un FEC
+  desequilibre. Lignes de paie (journal « PAIE », comptes 42x/43x/64x) chargees sans libelle ni compte
+  auxiliaire. Particularites du FEC Charlemagne « Non DGI » : 19 champs pour 18 noms d'en-tete (19e =
+  journal+piece, colonne `cle_piece`), `EcritureNum` et `DateLet` vides ; nom de fichier = date de cloture
+  de l'exercice, pas de la periode (un export prolonge ecrase le precedent).
+- `db/connection_compta.py` : base Administratif en lecture seule + base comptable attachee en lecture
+  seule sous le schema `compta`. Jointure famille : `COM_RESPONSABLES.RE_CODE_COMPTABLE` =
+  `CPT_ECRITURE.compte_aux` (270 payeurs sur 270 retrouves le 08/10).
+- `tools/comptabilite.py` : `encaissements_famille` (solde 411, factures, reglements avec mode presume,
+  impayes, frais, statut de chaque echeance) et `impayes_et_retards` (liste et resume). Regles :
+  - les comptes 411 ne sont **pas lettres** : retard = solde - echeances a venir de la derniere facture
+    validee (`FAC_HISTO_FAMILLE.HF_ECHE_*`) ; le solde est cumule depuis le debut de l'exercice ouvert,
+    comme `HF_ORI_SOLDE` repris dans l'echeancier ;
+  - une echeance n'est echue que `delai_jours` (5) apres sa date : la remise du 29/09 est comptabilisee
+    le 01/10 ; date de reference par defaut = derniere ecriture du FEC ;
+  - impaye = debit du 411 hors facturation et a-nouveaux, libelle `impay|rejet|represent` ; frais =
+    debit dont la piece a un credit de meme montant sur un compte 758 (ou libelle « frais »/« frs ») ;
+    journaux de facturation et d'a-nouveaux reconnus a leur libelle (« FACTUR »/« VENTE », « NOUVEAU ») ;
+  - un cheque recu mais pas encore saisi en comptabilite apparait comme un retard (familles « Cheque » a
+    echeance unique au 15/09) : le resultat le rappelle.
+  Valide le 08/10/2026 sur le FEC reel (8 312 lignes, 01/09/2025 -> 07/10/2026) : 23 familles en retard
+  dont les 4 impayes de septembre non regularises (prelevement, 220 a 306 EUR), 18 familles « Cheque » sans
+  cheque saisi, 1 ancien compte avec impayes ; 14 familles a impaye regularise.
+Tests : `tests/test_comptabilite.py` (donnees synthetiques). Ne jamais commiter un FEC (`*FEC*.txt` ignore).

@@ -12,3 +12,6 @@ logs/
 .pytest_cache/
 *.env
 manifest.txt
+
+# FEC de Charlemagne Comptabilite (donnees de familles) - jamais commit
+*FEC*.txt

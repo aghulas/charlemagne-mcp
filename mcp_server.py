@@ -20,10 +20,12 @@ import argparse
 from mcp.server.mcpserver import MCPServer
 
 from db.connection import get_connection
+from db.connection_compta import get_compta_connection
 from tools import (
     audit_facturation,
     calendrier,
     comparaison,
+    comptabilite,
     eleves,
     facturation,
     famille,
@@ -498,6 +500,61 @@ def register_tools(server: MCPServer) -> None:
                 return {"error": "VS_APPEL_PROF absente de la base."}
             res["note"] = "Base a jour a la date du dernier export Charlemagne charge, pas en temps reel."
             return res
+        finally:
+            conn.close()
+
+    @server.tool(
+        description=(
+            "Compte d'une famille dans Charlemagne Comptabilite (FEC charge, CHARLEMAGNE_COMPTA_DB), "
+            "a partir de id_responsable (IDRESPONSABLE), id_eleve (tous ses responsables) ou compte "
+            "(4111...) : solde du compte 411, factures et avoirs, reglements (date, montant, mode "
+            "presume : prelevement, virement, cheque, carte), impayes et frais d'impaye saisis, "
+            "echeancier de la derniere facture avec le statut de chaque echeance (couverte, non "
+            "couverte, a venir), retard et dernier reglement. date_reference (AAAA-MM-JJ) : defaut "
+            "= derniere ecriture du FEC. Aucune donnee bancaire."
+        )
+    )
+    def encaissements_famille(id_responsable: str | None = None, id_eleve: str | None = None,
+                              compte: str | None = None, date_reference: str | None = None,
+                              delai_jours: int = 5) -> dict:
+        """Solde, reglements, impayes et echeances d'une famille."""
+        try:
+            conn = get_compta_connection()
+        except FileNotFoundError as exc:
+            return {"error": str(exc)}
+        try:
+            return comptabilite.encaissements_famille(conn, id_responsable=id_responsable, id_eleve=id_eleve,
+                                                      compte=compte, date_reference=date_reference,
+                                                      delai_jours=delai_jours)
+        except ValueError as exc:
+            return {"error": str(exc)}
+        finally:
+            conn.close()
+
+    @server.tool(
+        description=(
+            "Familles en retard de paiement a une date (defaut : derniere ecriture du FEC charge) : "
+            "retard = solde du compte famille - echeances encore a venir (echeancier de la derniere "
+            "facture validee) ; echeances non couvertes, anciennete, impayes saisis (libelle impaye "
+            "ou rejet) et frais, dernier reglement, enfants et classes. Resume par mode de reglement "
+            "et par anciennete, familles dont l'impaye est deja regularise, familles en avance. "
+            "Filtres : classe, mode_reglement (Prelevement, Cheque...), seuil en euros. Un cheque "
+            "recu mais pas encore saisi en comptabilite apparait comme un retard : a verifier "
+            "avant toute relance."
+        )
+    )
+    def impayes_et_retards(date_reference: str | None = None, seuil: float = 1.0, classe: str | None = None,
+                           mode_reglement: str | None = None, delai_jours: int = 5) -> dict:
+        """Retards et impayes des familles."""
+        try:
+            conn = get_compta_connection()
+        except FileNotFoundError as exc:
+            return {"error": str(exc)}
+        try:
+            return comptabilite.impayes_et_retards(conn, date_reference=date_reference, seuil=seuil, classe=classe,
+                                                   mode_reglement=mode_reglement, delai_jours=delai_jours)
+        except ValueError as exc:
+            return {"error": str(exc)}
         finally:
             conn.close()
 
