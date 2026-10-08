@@ -411,7 +411,9 @@ def regularisations_a_preparer(conn, regles: dict, date_effet: str | None = None
 
 # ----------------------------------------------------------------- suivi des echeanciers
 
-def suivi_echeanciers(conn, regles: dict, id_responsable: str | None = None, aujourd_hui: date | None = None) -> dict:
+def suivi_echeanciers(conn, regles: dict, id_responsable: str | None = None, aujourd_hui: date | None = None,
+                      comptes: dict | None = None, seuil_retard: float = 1.0) -> dict:
+    """comptes : situation comptable par IDRESPONSABLE (tools.comptabilite.synthese_comptes), si un FEC est charge."""
     if not conn.execute("SELECT COUNT(*) FROM FAC_HISTO_FAMILLE").fetchone()[0]:
         raise ValueError("Aucune facturation validee dans l'export.")
     ctx = Contexte(conn, regles)
@@ -472,14 +474,27 @@ def suivi_echeanciers(conn, regles: dict, id_responsable: str | None = None, auj
         for e in ctx.el:
             if rid in ctx.pay[e] and e not in payeurs_factures and e not in enfants:
                 alertes.append({"type": "enfant_non_facture", "eleve": ctx.nom(e)})
+        compta = comptes.get(str(rid)) if comptes is not None else None
+        if compta and compta.get("retard", 0) > seuil_retard:
+            alertes.append({"type": "retard_de_paiement", "retard": compta["retard"],
+                            "echeances_non_couvertes": compta.get("echeances_non_couvertes", []),
+                            "impayes": compta.get("impayes"), "dernier_reglement": compta.get("dernier_reglement")})
         for a in alertes:
             A[a["type"]].append({"responsable": ctx.rn.get(rid, str(rid)), **{k: v for k, v in a.items() if k != "type"}})
         fam = {"id_responsable": rid, "responsable": ctx.rn.get(rid, str(rid)), "mode_reglement": mode_actuel,
                "factures": factures, "total_facture": total, "echeances_passees": passees, "echeances_a_venir": a_venir,
                "reste_a_prelever": round(sum(x["montant"] for x in a_venir), 2), "alertes": alertes}
+        if comptes is not None:
+            fam["comptabilite"] = compta
         reste_total += fam["reste_a_prelever"]
         if id_responsable not in (None, "") or alertes or len(fs) > 1:
             familles.append(fam)
+    note = ("Donnees a la date du dernier export. Les echeances passees sont supposees prelevees : aucun "
+            "encaissement n'est exporte, le statut paye/impaye n'est pas connu. ")
+    if comptes is not None:
+        note = ("Donnees a la date du dernier export. Statut des reglements lu dans le dernier FEC charge (bloc "
+                "'comptabilite' de chaque famille, alerte retard_de_paiement au-dela de "
+                f"{seuil_retard:.0f} EUR ; detail : encaissements_famille). ")
     return {
         "date": auj, "validations": [validations[k] for k in sorted(validations)],
         "resume": {"familles": len(par_resp), "familles_avec_plusieurs_factures": sum(1 for fs in par_resp.values() if len(fs) > 1),
@@ -488,7 +503,6 @@ def suivi_echeanciers(conn, regles: dict, id_responsable: str | None = None, auj
         "nb_alertes": {k: len(v) for k, v in A.items()},
         "alertes": {k: v[:MAX_ELEMENTS] for k, v in A.items()},
         "familles": familles[:MAX_ELEMENTS],
-        "note": ("Donnees a la date du dernier export. Les echeances passees sont supposees prelevees : aucun "
-                 "encaissement n'est exporte, le statut paye/impaye n'est pas connu. 'familles' ne liste que les "
-                 "familles avec une alerte ou plusieurs factures, sauf si id_responsable est donne."),
+        "note": note + ("'familles' ne liste que les familles avec une alerte ou plusieurs factures, sauf si "
+                       "id_responsable est donne."),
     }

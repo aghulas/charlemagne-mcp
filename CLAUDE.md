@@ -404,6 +404,11 @@ du debut de l'exercice ouvert a la date du jour), depose dans le dossier d'echan
   `tools/famille.py` n'est pas modifie ; base comptable absente ou illisible -> `comptabilite.disponible = False`,
   la fiche reste servie. `enrichir_responsables(conn, resultat, cle_liste, cle_id)` est reutilisable pour d'autres
   outils (suivi_echeanciers). Memes regles de calcul que `impayes_et_retards` (verifie sur deux familles reelles).
+- **`suivi_echeanciers` + comptabilite** : le wrapper calcule `synthese_familles_facturees` (toutes les familles de
+  `FAC_HISTO_FAMILLE`, ou la seule demandee) et la passe en `comptes=` a `suivi_facturation.suivi_echeanciers` :
+  bloc `comptabilite` par famille detaillee et alerte `retard_de_paiement` (retard > `seuil_retard` = 1 EUR), ce qui
+  fait apparaitre la famille dans `familles`. Sans FEC, comportement et note inchanges. Verifie le 08/10/2026 :
+  22 familles en retard (57 990 EUR) = `impayes_et_retards` moins l'ancien compte sans facture de l'annee (253 EUR).
 - **Garde-fou de periode** : l'ecran DGI/FEC propose la fin de l'exercice ; un FEC qui ferait perdre plus de
   10 ecritures deja chargees (`SEUIL_RECUL`) est refuse (`--accepter-recul` pour forcer). On compte les ecritures
   perdues et non la date de la derniere ecriture : supprimer une ecriture recente fait reculer cette date (constate

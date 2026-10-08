@@ -283,3 +283,9 @@ def test_fiche_famille_du_serveur_sans_base_comptable(monkeypatch, tmp_path):
     res = mcp_server._avec_comptabilite({"responsables": [{"id_responsable": "1"}]})
     assert res["comptabilite"]["disponible"] is False
     assert "comptabilite" not in res["responsables"][0]
+
+
+def test_synthese_familles_facturees(conn):
+    s = C.synthese_familles_facturees(conn)
+    assert set(s["comptes"]) == {"1", "2"}
+    assert set(C.synthese_familles_facturees(conn, "2")["comptes"]) == {"2"}

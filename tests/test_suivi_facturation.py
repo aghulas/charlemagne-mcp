@@ -208,6 +208,26 @@ def test_suivi_echeanciers(conn):
         suivi_echeanciers(conn, REGLES, id_responsable="99", aujourd_hui=AUJ)
 
 
+def test_suivi_echeanciers_avec_comptabilite(conn):
+    sans = suivi_echeanciers(conn, REGLES, aujourd_hui=AUJ)
+    assert all("comptabilite" not in f for f in sans["familles"]) and "statut paye/impaye" in sans["note"]
+    a_jour = {"compte": "4111X", "solde": 0.0, "retard": 0.0, "en_avance": 0.0}
+    en_retard = {"compte": "4111Y", "solde": 300.0, "retard": 120.0, "en_avance": 0.0,
+                 "echeances_non_couvertes": [{"date": "2026-09-29", "montant": 120.0}], "impayes": None,
+                 "dernier_reglement": None}
+    comptes = {str(r): a_jour for r in (10, 20, 30, 40)}
+    comptes["30"] = en_retard
+    r = suivi_echeanciers(conn, REGLES, aujourd_hui=AUJ, comptes=comptes)
+    assert r["nb_alertes"].get("retard_de_paiement") == 1
+    rc = next(f for f in r["familles"] if f["id_responsable"] == 30)      # listee grace a l'alerte
+    assert rc["comptabilite"]["retard"] == 120.0
+    assert rc["alertes"][-1]["echeances_non_couvertes"][0]["montant"] == 120.0
+    assert "FEC" in r["note"] and "statut paye/impaye" not in r["note"]
+    # sous le seuil : pas d'alerte
+    comptes["30"] = {**en_retard, "retard": 0.5}
+    assert "retard_de_paiement" not in suivi_echeanciers(conn, REGLES, aujourd_hui=AUJ, comptes=comptes)["nb_alertes"]
+
+
 
 def test_saisie_au_montant_plein(conn):
     """regles prorata.saisie = "plein" : la saisie proposee prend le montant plein

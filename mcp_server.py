@@ -287,15 +287,33 @@ def register_tools(server: MCPServer) -> None:
             "la facture (echeancier a reactualiser), prelevement sans IBAN, echeances irregulieres, "
             "payeur ou repartition modifies depuis la facturation, enfant du payeur non facture. "
             "Sans id_responsable, ne detaille que les familles avec alerte ou plusieurs factures. "
-            "Ne connait PAS le statut paye/impaye (aucun encaissement exporte). Aucune donnee bancaire."
+            "Si un FEC est charge : bloc 'comptabilite' par famille (solde 411, retard ou avance, echeances "
+            "non couvertes, dernier reglement, impayes) et alerte retard_de_paiement (retard > 1 EUR) ; sans "
+            "FEC, le statut paye/impaye n'est pas connu. Aucune donnee bancaire."
         )
     )
     def suivi_echeanciers(id_responsable: str | None = None) -> dict:
         """Echeanciers, factures de l'annee et alertes de reglement par famille."""
+        comptes, info_compta = None, None
+        try:
+            cc = get_compta_connection()
+        except FileNotFoundError:
+            info_compta = {"disponible": False, "message": "Base comptable absente (aucun FEC charge)."}
+        else:
+            try:
+                synth = comptabilite.synthese_familles_facturees(cc, id_responsable)
+                comptes = synth["comptes"]
+                info_compta = {"date_reference": synth["date_reference"], "note": synth["note"]}
+            except (ValueError, sqlite3.Error) as exc:
+                info_compta = {"disponible": False, "message": f"Situation comptable indisponible : {exc}"}
+            finally:
+                cc.close()
         conn = get_connection()
         try:
-            return suivi_facturation.suivi_echeanciers(conn, audit_facturation.charger_regles(),
-                                                       id_responsable=id_responsable)
+            res = suivi_facturation.suivi_echeanciers(conn, audit_facturation.charger_regles(),
+                                                      id_responsable=id_responsable, comptes=comptes)
+            res["comptabilite"] = info_compta
+            return res
         except ValueError as exc:
             return {"error": str(exc)}
         finally:

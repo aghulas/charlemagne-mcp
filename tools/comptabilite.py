@@ -683,3 +683,12 @@ def enrichir_responsables(conn, resultat: dict, cle_liste: str = "responsables",
         r["comptabilite"] = synth["comptes"].get(str(r.get(cle_id)).strip())
     resultat["comptabilite"] = {"date_reference": synth["date_reference"], "note": synth["note"]}
     return resultat
+
+
+def synthese_familles_facturees(conn, id_responsable: str | None = None, delai_jours: int = 5) -> dict:
+    """synthese_comptes pour toutes les familles ayant une facture validee (ou une seule)."""
+    if id_responsable not in (None, ""):
+        ids = [id_responsable]
+    else:
+        ids = [r[0] for r in conn.execute("SELECT DISTINCT IDRESPONSABLE FROM FAC_HISTO_FAMILLE")]
+    return synthese_comptes(conn, ids, delai_jours=delai_jours)
