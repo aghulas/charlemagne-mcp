@@ -619,3 +619,67 @@ def pont_facturation_comptabilite(conn, validation: str | None = None) -> dict:
                  f"{_iso(m['periode_fin'])} (charge le {m['charge_le']}). Une facture est retrouvee par son numero "
                  "(piece) et le compte 411 de la famille ; les produits sont compares par compte et par date de facture."),
     }
+
+
+# ------------------------------------------------------------------ syntheses pour les autres outils
+
+def synthese_comptes(conn, ids_responsables, date_reference: str | None = None, delai_jours: int = 5) -> dict:
+    """Bloc comptable court par responsable (IDRESPONSABLE -> situation du compte 411).
+
+    Sert a enrichir fiche_famille et suivi_echeanciers sans dupliquer le detail
+    d'encaissements_famille (mouvements complets).
+    """
+    m = meta(conn)
+    date_ref = _date_ref(m, date_reference)
+    _, par_id = _responsables(conn)
+    ids = sorted({int(x) for x in ids_responsables if str(x).strip().isdigit()})
+    comptes = {rid: par_id[rid] for rid in ids if rid in par_id}
+    mvts = _mouvements(conn, sorted(set(comptes.values()))) if comptes else {}
+    fact, an = _journaux_speciaux(conn)
+    frais = _pieces_frais(conn)
+    ech = _echeanciers(conn)
+    partages = Counter(comptes.values())
+    res: dict[str, dict] = {}
+    for rid in ids:
+        c = comptes.get(rid)
+        if not c:
+            res[str(rid)] = {"compte": None, "message": "pas de code comptable dans la fiche responsable"}
+            continue
+        # copie : situation() annote les ecritures, un compte peut etre partage entre deux responsables
+        s = situation([dict(e) for e in mvts.get(c, [])], ech.get(rid), date_ref, delai_jours, fact, an, frais)
+        if not s["mouvements"] and rid not in ech:
+            res[str(rid)] = {"compte": c, "message": "aucune ecriture sur ce compte dans le FEC"}
+            continue
+        dernier = s["reglements"][-1] if s["reglements"] else None
+        imp = s["impayes"]
+        res[str(rid)] = {
+            "compte": c,
+            **({"compte_partage": True} if partages[c] > 1 else {}),
+            "solde": s["solde"],
+            "retard": max(s["retard"], 0.0),
+            "en_avance": round(-s["retard"], 2) if s["retard"] < -0.005 else 0.0,
+            "reste_a_venir": s["reste_a_venir"],
+            "echeances_non_couvertes": s["echeances_non_couvertes"],
+            "dernier_reglement": ({"date": _iso(dernier["date_ecriture"]), "montant": round(dernier["credit"], 2),
+                                   "mode": _mode(dernier["libelle"], dernier["piece_ref"])} if dernier else None),
+            "impayes": ({"nombre": len(imp), "montant": round(sum(e["debit"] for e in imp), 2),
+                         "dernier": _iso(imp[-1]["date_ecriture"]),
+                         "frais": s["totaux"].get("frais_impaye", 0.0)} if imp else None),
+        }
+    return {"date_reference": _iso(date_ref), "comptes": res,
+            "note": (f"Comptabilite au dernier FEC charge ({m['fichier']}, ecritures jusqu'au "
+                     f"{_iso(m['periode_fin'])}). Retard = solde du compte - echeances a venir, une echeance "
+                     f"etant echue {delai_jours} jours apres sa date ; un cheque recu mais non saisi apparait en "
+                     f"retard. Impayes : cumul depuis le debut du FEC ({_iso(m['periode_debut'])}), "
+                     "regularises ou non. Detail des mouvements : encaissements_famille.")}
+
+
+def enrichir_responsables(conn, resultat: dict, cle_liste: str = "responsables", cle_id: str = "id_responsable",
+                          date_reference: str | None = None, delai_jours: int = 5) -> dict:
+    """Ajoute 'comptabilite' a chaque responsable d'un resultat d'outil (modifie et renvoie resultat)."""
+    liste = resultat.get(cle_liste) or []
+    synth = synthese_comptes(conn, [r.get(cle_id) for r in liste], date_reference, delai_jours)
+    for r in liste:
+        r["comptabilite"] = synth["comptes"].get(str(r.get(cle_id)).strip())
+    resultat["comptabilite"] = {"date_reference": synth["date_reference"], "note": synth["note"]}
+    return resultat

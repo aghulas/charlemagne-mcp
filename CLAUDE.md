@@ -398,6 +398,12 @@ du debut de l'exercice ouvert a la date du jour), depose dans le dossier d'echan
   (`HF_APAYER_FACTURE` = debit du 411) ; produits par compte et par date de facture (`FAC_COMPTA_GENERAL` = credits
   70x/75x/7096x, piece `70-MM-AA/n`) ; ecritures 411 du journal de facturation sans facture. Valide le 08/10/2026 :
   validations 1 (270 factures) et 2 (2 factures) entierement passees, 18 comptes de produits identiques.
+- **`fiche_famille` + comptabilite** : le wrapper du serveur (`_avec_comptabilite`) ajoute a chaque responsable un
+  bloc `comptabilite` (`synthese_comptes` : compte 411, solde, retard / avance, reste a venir, echeances non
+  couvertes, dernier reglement avec mode presume, impayes cumules depuis le debut du FEC) et une note globale.
+  `tools/famille.py` n'est pas modifie ; base comptable absente ou illisible -> `comptabilite.disponible = False`,
+  la fiche reste servie. `enrichir_responsables(conn, resultat, cle_liste, cle_id)` est reutilisable pour d'autres
+  outils (suivi_echeanciers). Memes regles de calcul que `impayes_et_retards` (verifie sur deux familles reelles).
 - **Garde-fou de periode** : l'ecran DGI/FEC propose la fin de l'exercice ; un FEC qui ferait perdre plus de
   10 ecritures deja chargees (`SEUIL_RECUL`) est refuse (`--accepter-recul` pour forcer). On compte les ecritures
   perdues et non la date de la derniere ecriture : supprimer une ecriture recente fait reculer cette date (constate

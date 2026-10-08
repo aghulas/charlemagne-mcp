@@ -252,3 +252,34 @@ def test_pont_facturation_ecarts_et_validation_absente(conn):
     assert C.pont_facturation_comptabilite(conn, validation="2")["validations"][0]["validation"] == 2
     with pytest.raises(ValueError, match="inconnue"):
         C.pont_facturation_comptabilite(conn, validation="9")
+
+
+def test_synthese_comptes_pour_fiche_famille(conn):
+    s = C.synthese_comptes(conn, ["1", "2", "99"], date_reference="2026-10-08")
+    a, b = s["comptes"]["1"], s["comptes"]["2"]
+    assert a["compte"] == "4111ALPHA" and a["solde"] == 325.0 and a["retard"] == 125.0
+    assert a["reste_a_venir"] == 200.0 and a["en_avance"] == 0.0
+    assert a["echeances_non_couvertes"] == [{"date": "2026-09-29", "montant": 110.0}]
+    assert a["dernier_reglement"] == {"date": "2026-10-01", "montant": 110.0, "mode": "prelevement"}
+    assert a["impayes"] == {"nombre": 1, "montant": 110.0, "dernier": "2026-10-03", "frais": 15.0}
+    assert b["retard"] == 200.0 and b["dernier_reglement"] is None and b["impayes"] is None
+    assert s["comptes"]["99"]["compte"] is None
+    assert "mouvements" not in a                       # le detail reste dans encaissements_famille
+
+
+def test_enrichir_responsables_ajoute_le_bloc(conn):
+    fiche = {"responsables": [{"id_responsable": "1", "responsable": "ALPHA Anne"}]}
+    r = C.enrichir_responsables(conn, fiche, date_reference="2026-10-08")
+    assert r is fiche and fiche["responsables"][0]["comptabilite"]["retard"] == 125.0
+    assert fiche["comptabilite"]["date_reference"] == "2026-10-08"
+
+
+def test_fiche_famille_du_serveur_sans_base_comptable(monkeypatch, tmp_path):
+    import mcp_server
+
+    def absente(*a, **k):
+        raise FileNotFoundError("absente")
+    monkeypatch.setattr(mcp_server, "get_compta_connection", absente)
+    res = mcp_server._avec_comptabilite({"responsables": [{"id_responsable": "1"}]})
+    assert res["comptabilite"]["disponible"] is False
+    assert "comptabilite" not in res["responsables"][0]

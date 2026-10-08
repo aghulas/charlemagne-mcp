@@ -16,6 +16,7 @@ Usage :
 """
 
 import argparse
+import sqlite3
 
 from mcp.server.mcpserver import MCPServer
 
@@ -37,6 +38,23 @@ from tools import (
     suivi_facturation,
     vie_scolaire,
 )
+
+
+def _avec_comptabilite(res: dict, **kw) -> dict:
+    """Ajoute la situation comptable des responsables si la base FEC existe, sans jamais faire echouer l'outil."""
+    try:
+        cc = get_compta_connection()
+    except FileNotFoundError:
+        res["comptabilite"] = {"disponible": False,
+                               "message": "Base comptable absente (aucun FEC charge) : situation comptable non jointe."}
+        return res
+    try:
+        comptabilite.enrichir_responsables(cc, res, **kw)
+    except (ValueError, sqlite3.Error) as exc:
+        res["comptabilite"] = {"disponible": False, "message": f"Situation comptable indisponible : {exc}"}
+    finally:
+        cc.close()
+    return res
 
 INSTRUCTIONS = (
     "Acces en lecture seule aux donnees de gestion Charlemagne, "
@@ -294,8 +312,10 @@ def register_tools(server: MCPServer) -> None:
             "cours, sinon cumul de toutes les factures validees de l'annee avec le detail par "
             "facture et les echeances ; validee=True/False pour forcer) avec le total par "
             "responsable, les lignes manuelles en attente de validation, et pieces a verser recues ou non. A utiliser pour verifier une "
-            "famille apres une fiche forfaits, un certificat ou une facture APEL. Lecture seule, "
-            "aucune coordonnee bancaire (seulement renseigne/vide)."
+            "famille apres une fiche forfaits, un certificat ou une facture APEL. Si un FEC est "
+            "charge, chaque responsable porte aussi sa situation comptable (compte 411, solde, retard ou "
+            "avance, echeances non couvertes, dernier reglement, impayes) ; detail : encaissements_famille. "
+            "Lecture seule, aucune coordonnee bancaire (seulement renseigne/vide)."
         )
     )
     def fiche_famille(id_eleve: str | None = None, id_foyer: str | None = None,
@@ -303,11 +323,12 @@ def register_tools(server: MCPServer) -> None:
         """Tout sur une famille : responsables, enfants, facturation, pieces recues."""
         conn = get_connection()
         try:
-            return famille.fiche_famille(conn, id_eleve=id_eleve, id_foyer=id_foyer, validee=validee)
+            res = famille.fiche_famille(conn, id_eleve=id_eleve, id_foyer=id_foyer, validee=validee)
         except ValueError as exc:
             return {"error": str(exc)}
         finally:
             conn.close()
+        return _avec_comptabilite(res)
 
     @server.tool(
         description=(
