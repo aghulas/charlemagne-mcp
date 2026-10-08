@@ -393,6 +393,11 @@ du debut de l'exercice ouvert a la date du jour), depose dans le dossier d'echan
   les 411 comptabilises dans la fenetre ; rejets = impayes saisis avant l'echeance suivante ; encaisse net.
   Valide le 08/10/2026 : echeance du 29/09, 251 familles attendues = 251 prelevees (85 765,30 EUR, passees le
   01/10), 6 rejets (1 773,40 EUR). Le fichier SEPA (`pain.008`) n'est pas lu.
+- `pont_facturation_comptabilite(validation)` : chaque validation (FAC_VALIDATION / FAC_HISTO_FAMILLE) retrouvee
+  dans le journal de facturation du FEC par **numero de facture = piece** et compte 411 de la famille
+  (`HF_APAYER_FACTURE` = debit du 411) ; produits par compte et par date de facture (`FAC_COMPTA_GENERAL` = credits
+  70x/75x/7096x, piece `70-MM-AA/n`) ; ecritures 411 du journal de facturation sans facture. Valide le 08/10/2026 :
+  validations 1 (270 factures) et 2 (2 factures) entierement passees, 18 comptes de produits identiques.
 - **Garde-fou de periode** : l'ecran DGI/FEC propose la fin de l'exercice ; un FEC qui ferait perdre plus de
   10 ecritures deja chargees (`SEUIL_RECUL`) est refuse (`--accepter-recul` pour forcer). On compte les ecritures
   perdues et non la date de la derniere ecriture : supprimer une ecriture recente fait reculer cette date (constate

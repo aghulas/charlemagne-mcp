@@ -582,6 +582,29 @@ def register_tools(server: MCPServer) -> None:
         finally:
             conn.close()
 
+    @server.tool(
+        description=(
+            "Pont facturation -> comptabilite : pour chaque validation de facturation (ou une seule, validation = "
+            "IDVALIDATION), statut (passee en comptabilite, avec ecarts, non passee), factures retrouvees dans le "
+            "journal de facturation du FEC par numero et compte 411 de la famille, factures absentes, ecarts de "
+            "montant ; produits compares par compte et par date de facture (FAC_COMPTA_GENERAL) ; ecritures de "
+            "facturation sur des comptes familles sans facture correspondante. A lancer apres chaque validation "
+            "(initiale, complementaire, avoir) et import en comptabilite."
+        )
+    )
+    def pont_facturation_comptabilite(validation: str | None = None) -> dict:
+        """Les factures validees sont-elles en comptabilite, au bon montant ?"""
+        try:
+            conn = get_compta_connection()
+        except FileNotFoundError as exc:
+            return {"error": str(exc)}
+        try:
+            return comptabilite.pont_facturation_comptabilite(conn, validation=validation)
+        except ValueError as exc:
+            return {"error": str(exc)}
+        finally:
+            conn.close()
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Serveur MCP Charlemagne")

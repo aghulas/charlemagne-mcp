@@ -207,3 +207,48 @@ def test_controle_prelevements_ecart_et_facture_complementaire(conn):
                  "VALUES ('2', '1', 'Prélèvement', '20261001', '20261027', '120', '20261127', '120')")
     assert C.controle_prelevements(conn, date_echeance="2026-09-29")["attendu"]["montant"] == 110.0
     assert C.controle_prelevements(conn, date_echeance="2026-10-27")["attendu"]["montant"] == 120.0
+
+
+def _facturation(conn):
+    conn.executescript("""
+        ALTER TABLE FAC_HISTO_FAMILLE ADD COLUMN HF_NUMERO_FACTURE TEXT;
+        ALTER TABLE FAC_HISTO_FAMILLE ADD COLUMN HF_APAYER_FACTURE TEXT;
+        UPDATE FAC_HISTO_FAMILLE SET HF_NUMERO_FACTURE = '1', HF_APAYER_FACTURE = '300' WHERE IDRESPONSABLE = '1';
+        UPDATE FAC_HISTO_FAMILLE SET HF_NUMERO_FACTURE = '2', HF_APAYER_FACTURE = '200' WHERE IDRESPONSABLE = '2';
+        CREATE TABLE FAC_VALIDATION (IDVALIDATION TEXT, VA_TYPE_FACTURE TEXT, VA_NB_FACTURES TEXT, VA_NUMERO_DEBUT TEXT,
+            VA_NUMERO_FIN TEXT, VA_DATE_HEURE TEXT);
+        INSERT INTO FAC_VALIDATION VALUES ('1', 'Toutes', '2', '1', '2', 'Le 29/09/2026');
+        CREATE TABLE FAC_COMPTA_GENERAL (IDVALIDATION TEXT, CG_COMPTE TEXT, CG_DEBIT TEXT, CG_CREDIT TEXT, CG_DATE_FACTURE TEXT);
+        INSERT INTO FAC_COMPTA_GENERAL VALUES ('1', '7061000', '0', '500', '20260915');
+    """)
+
+
+def test_pont_facturation_conforme(conn):
+    _facturation(conn)
+    r = C.pont_facturation_comptabilite(conn)
+    v = r["validations"][0]
+    assert v["statut"] == "passee en comptabilite" and v["numeros"] == "1 a 2"
+    assert v["factures"] == {"nombre": 2, "montant": 500.0, "retrouvees": 2, "montant_comptabilite": 500.0}
+    assert r["produits_par_date"][0]["ecarts"] == [] and r["produits_par_date"][0]["total_comptabilite"] == 500.0
+    assert r["ecritures_familles_sans_facture"] == []
+
+
+def test_pont_facturation_ecarts_et_validation_absente(conn):
+    _facturation(conn)
+    conn.executescript("""
+        UPDATE FAC_HISTO_FAMILLE SET HF_APAYER_FACTURE = '250' WHERE IDRESPONSABLE = '2';
+        INSERT INTO FAC_VALIDATION VALUES ('2', 'Manuelles', '1', '3', '3', 'Le 01/10/2026');
+        INSERT INTO FAC_HISTO_FAMILLE (IDVALIDATION, IDRESPONSABLE, HF_MODE_REGLEMENT, HF_DATE_FACTURE, HF_NUMERO_FACTURE,
+            HF_APAYER_FACTURE) VALUES ('2', '1', 'Prélèvement', '20261001', '3', '40');
+        INSERT INTO FAC_COMPTA_GENERAL VALUES ('2', '7061000', '0', '40', '20261001');
+    """)
+    r = C.pont_facturation_comptabilite(conn)
+    v1, v2 = r["validations"]
+    assert v1["statut"] == "passee, avec ecarts"
+    assert v1["ecarts_de_montant"] == [{"facture": "2", "responsable": "BETA Bruno", "id_responsable": 2,
+                                        "montant_facture": 250.0, "montant_comptabilite": 200.0}]
+    assert v2["statut"] == "non passee en comptabilite" and v2["factures_absentes"][0]["facture"] == "3"
+    assert r["produits_par_date"][1]["ecarts"] == [{"compte": "7061000", "facturation": 40.0, "comptabilite": 0.0}]
+    assert C.pont_facturation_comptabilite(conn, validation="2")["validations"][0]["validation"] == 2
+    with pytest.raises(ValueError, match="inconnue"):
+        C.pont_facturation_comptabilite(conn, validation="9")

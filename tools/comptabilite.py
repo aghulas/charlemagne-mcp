@@ -519,3 +519,103 @@ def controle_prelevements(conn, date_echeance: str | None = None, fenetre_jours:
                  f"{_iso(m['periode_fin'])}). Rejets : impayes saisis entre cette echeance et la suivante. Le fichier de remise SEPA "
                  "lui-meme n'est pas lu."),
     }
+
+
+# ------------------------------------------------------------------ pont facturation -> comptabilite
+
+def pont_facturation_comptabilite(conn, validation: str | None = None) -> dict:
+    """Chaque validation de facturation est-elle passee en comptabilite, a l'euro pres ?"""
+    m = meta(conn)
+    try:
+        vals = conn.execute("SELECT IDVALIDATION, VA_TYPE_FACTURE, VA_NB_FACTURES, VA_NUMERO_DEBUT, VA_NUMERO_FIN, "
+                            "VA_DATE_HEURE FROM FAC_VALIDATION").fetchall()
+        factures = conn.execute("SELECT IDVALIDATION, IDRESPONSABLE, HF_NUMERO_FACTURE, HF_APAYER_FACTURE, "
+                                "HF_DATE_FACTURE FROM FAC_HISTO_FAMILLE").fetchall()
+    except sqlite3.OperationalError as exc:
+        raise ValueError("Tables de facturation absentes de la base Administratif.") from exc
+    if not factures:
+        raise ValueError("Aucune facture validee dans la base Administratif.")
+    par_compte, par_id = _responsables(conn)
+    fact_j, _an = _journaux_speciaux(conn)
+    if not fact_j:
+        raise ValueError("Aucun journal de facturation reconnu dans le FEC (libelle contenant FACTUR ou VENTE).")
+    num = lambda x: str(int(_num(x))) if x not in (None, "") else ""  # noqa: E731
+    debut = min(f[4] for f in factures if f[4])[:6] + "01"          # 1er jour du mois de la premiere facture
+    q = ",".join("?" * len(fact_j))
+    lignes = conn.execute(
+        f"SELECT journal, date_ecriture, compte, compte_aux, piece_ref, debit, credit FROM compta.CPT_ECRITURE "
+        f"WHERE journal IN ({q}) AND date_ecriture >= ?", [*fact_j, debut]).fetchall()
+    cpta_fact = defaultdict(float)                 # (piece, compte 411) -> montant
+    cpta_prod = defaultdict(float)                 # (date, compte) -> credit net
+    for j, d_, cpt, aux, piece, deb, cre in lignes:
+        if cpt.startswith(PREFIXE_FAMILLES):
+            cpta_fact[(piece, aux)] += deb - cre
+        else:
+            cpta_prod[(d_, cpt)] += cre - deb
+    try:
+        attendu_prod = defaultdict(float)
+        for v, cpt, deb, cre, d_ in conn.execute(
+                "SELECT IDVALIDATION, CG_COMPTE, CG_DEBIT, CG_CREDIT, CG_DATE_FACTURE FROM FAC_COMPTA_GENERAL"):
+            attendu_prod[(d_, cpt)] += _num(cre) - _num(deb)
+    except sqlite3.OperationalError:
+        attendu_prod = None
+    vus = set()
+    res_vals = []
+    for v, typ, nb, n1, n2, quand in sorted(vals, key=lambda r: int(_num(r[0]))):
+        if validation not in (None, "") and str(v) != str(validation):
+            continue
+        fs = [f for f in factures if str(f[0]) == str(v)]
+        absentes, ecarts, trouvees, montant_cpta = [], [], 0, 0.0
+        for _v, rid, n, montant, d_ in fs:
+            code = par_id.get(int(rid))
+            cle = (num(n), code)
+            vus.add(cle)
+            ligne = {"facture": num(n), "responsable": (par_compte.get(code) or {}).get("responsable"),
+                     "id_responsable": int(rid), "montant_facture": round(_num(montant), 2)}
+            if cle not in cpta_fact:
+                absentes.append(ligne)
+                continue
+            trouvees += 1
+            montant_cpta += cpta_fact[cle]
+            if abs(cpta_fact[cle] - _num(montant)) > 0.01:
+                ecarts.append({**ligne, "montant_comptabilite": round(cpta_fact[cle], 2)})
+        dates = sorted({f[4] for f in fs if f[4]})
+        statut = ("non passee en comptabilite" if fs and not trouvees else
+                  "passee, avec ecarts" if absentes or ecarts else "passee en comptabilite")
+        res_vals.append({
+            "validation": int(_num(v)), "type": typ, "validee": quand, "date_facture": [_iso(x) for x in dates],
+            "numeros": f"{num(n1)} a {num(n2)}", "statut": statut,
+            "factures": {"nombre": len(fs), "montant": round(sum(_num(f[3]) for f in fs), 2),
+                         "retrouvees": trouvees, "montant_comptabilite": round(montant_cpta, 2)},
+            "factures_absentes": absentes[:MAX_ELEMENTS], "ecarts_de_montant": ecarts[:MAX_ELEMENTS],
+        })
+    # produits par date de facture (plusieurs validations le meme jour sont additionnees)
+    produits = []
+    if attendu_prod is not None:
+        dates_v = {d_ for r in res_vals for d_ in (x.replace("-", "") for x in r["date_facture"])}
+        for d_ in sorted(dates_v):
+            comptes = sorted({c for (dd, c) in attendu_prod if dd == d_} | {c for (dd, c) in cpta_prod if dd == d_})
+            ec = [{"compte": c, "facturation": round(attendu_prod.get((d_, c), 0.0), 2),
+                   "comptabilite": round(cpta_prod.get((d_, c), 0.0), 2)}
+                  for c in comptes if abs(attendu_prod.get((d_, c), 0.0) - cpta_prod.get((d_, c), 0.0)) > 0.01]
+            produits.append({"date_facture": _iso(d_), "comptes": len(comptes),
+                             "total_facturation": round(sum(v for (dd, _), v in attendu_prod.items() if dd == d_), 2),
+                             "total_comptabilite": round(sum(v for (dd, _), v in cpta_prod.items() if dd == d_), 2),
+                             "ecarts": ec})
+    sans_facture = []
+    if validation in (None, ""):
+        for (piece, aux), montant in sorted(cpta_fact.items()):
+            if (piece, aux) not in vus and abs(montant) > 0.005:
+                sans_facture.append({"piece": piece, "compte": aux, "responsable": (par_compte.get(aux) or {}).get("responsable"),
+                                     "montant": round(montant, 2)})
+    if validation not in (None, "") and not res_vals:
+        raise ValueError(f"Validation inconnue : {validation!r}")
+    return {
+        "validations": res_vals,
+        "produits_par_date": produits,
+        "ecritures_familles_sans_facture": sans_facture[:MAX_ELEMENTS],
+        "note": (f"Facturation : FAC_HISTO_FAMILLE / FAC_COMPTA_GENERAL de la base Administratif. Comptabilite : journal "
+                 f"de facturation du FEC ({', '.join(sorted(fact_j))}) depuis le {_iso(debut)}, ecritures jusqu'au "
+                 f"{_iso(m['periode_fin'])} (charge le {m['charge_le']}). Une facture est retrouvee par son numero "
+                 "(piece) et le compte 411 de la famille ; les produits sont compares par compte et par date de facture."),
+    }
