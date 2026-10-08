@@ -558,6 +558,30 @@ def register_tools(server: MCPServer) -> None:
         finally:
             conn.close()
 
+    @server.tool(
+        description=(
+            "Controle d'une echeance de prelevement (defaut : la derniere echeance passee a la date du FEC "
+            "charge) : familles et montant attendus (echeancier de la facture en vigueur a cette date, familles "
+            "en Prelevement), prelevements effectivement comptabilises sur les comptes familles dans les "
+            "fenetre_jours suivants, familles attendues non prelevees, ecarts de montant, prelevements sans "
+            "echeance attendue, rejets (impayes) saisis avant l'echeance suivante, encaisse net, et prochaine "
+            "echeance (familles, montant). date_echeance au format AAAA-MM-JJ. Ne lit pas le fichier SEPA."
+        )
+    )
+    def controle_prelevements(date_echeance: str | None = None, fenetre_jours: int = 15) -> dict:
+        """Echeance de prelevement : attendu, preleve, ecarts et rejets."""
+        try:
+            conn = get_compta_connection()
+        except FileNotFoundError as exc:
+            return {"error": str(exc)}
+        try:
+            return comptabilite.controle_prelevements(conn, date_echeance=date_echeance,
+                                                      fenetre_jours=fenetre_jours)
+        except ValueError as exc:
+            return {"error": str(exc)}
+        finally:
+            conn.close()
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Serveur MCP Charlemagne")

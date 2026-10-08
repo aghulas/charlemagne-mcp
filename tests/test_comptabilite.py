@@ -181,3 +181,29 @@ def test_chemin_de_la_base_comptable(monkeypatch, tmp_path):
     assert chemin_compta() == tmp_path / "comptabilite_consolidee.db"
     monkeypatch.setenv("CHARLEMAGNE_COMPTA_DB", str(tmp_path / "autre.db"))
     assert chemin_compta() == tmp_path / "autre.db"
+
+
+def test_controle_prelevements(conn):
+    # echeance du 29/09 : A attendu 110 (prelevement), preleve 110 le 01/10, puis rejete le 03/10 ; B paie par cheque
+    r = C.controle_prelevements(conn)
+    assert r["date_echeance"] == "2026-09-29" and r["statut"] == "conforme"
+    assert r["attendu"] == {"familles": 1, "montant": 110.0}
+    assert r["preleve"]["montant"] == 110.0 and r["preleve"]["comptabilise_le"] == {"2026-10-01": 1}
+    assert r["rejets_saisis"] == {"familles": 1, "montant": 110.0} and r["encaisse_net"] == 0.0
+    assert r["prochaine_echeance"] == {"date": "2026-10-27", "familles": 1, "montant": 100.0}
+    # echeance future : remise pas encore comptabilisee, famille attendue signalee manquante
+    r2 = C.controle_prelevements(conn, date_echeance="2026-10-27")
+    assert r2["statut"] == "remise non encore comptabilisee" and r2["manquants"] == []
+    assert r2["attendu"] == {"familles": 1, "montant": 100.0}
+    with pytest.raises(ValueError, match="Pas d'echeance"):
+        C.controle_prelevements(conn, date_echeance="2026-10-15")
+
+
+def test_controle_prelevements_ecart_et_facture_complementaire(conn):
+    # complementaire du 01/10 pour A : l'echeance du 29/09 reste celle de la facture initiale,
+    # celle du 27/10 vient de la complementaire (120 au lieu de 100)
+    conn.execute("INSERT INTO FAC_HISTO_FAMILLE (IDVALIDATION, IDRESPONSABLE, HF_MODE_REGLEMENT, HF_DATE_FACTURE, "
+                 "HF_ECHE_DATE1, HF_ECHE_PRIX1, HF_ECHE_DATE2, HF_ECHE_PRIX2) "
+                 "VALUES ('2', '1', 'Prélèvement', '20261001', '20261027', '120', '20261127', '120')")
+    assert C.controle_prelevements(conn, date_echeance="2026-09-29")["attendu"]["montant"] == 110.0
+    assert C.controle_prelevements(conn, date_echeance="2026-10-27")["attendu"]["montant"] == 120.0

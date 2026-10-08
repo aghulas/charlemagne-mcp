@@ -387,6 +387,12 @@ du debut de l'exercice ouvert a la date du jour), depose dans le dossier d'echan
   Valide le 08/10/2026 sur le FEC reel (8 312 lignes, 01/09/2025 -> 07/10/2026) : 23 familles en retard
   dont les 4 impayes de septembre non regularises (prelevement, 220 a 306 EUR), 18 familles « Cheque » sans
   cheque saisi, 1 ancien compte avec impayes ; 14 familles a impaye regularise.
+- `controle_prelevements(date_echeance, fenetre_jours=15)` : pour une echeance (defaut : la derniere passee a la
+  date du FEC), attendu = echeance de la facture **en vigueur a cette date** (une complementaire re-etale les
+  echeances suivantes, pas celles d'avant), familles en Prelevement ; preleve = reglements « prelevement » sur
+  les 411 comptabilises dans la fenetre ; rejets = impayes saisis avant l'echeance suivante ; encaisse net.
+  Valide le 08/10/2026 : echeance du 29/09, 251 familles attendues = 251 prelevees (85 765,30 EUR, passees le
+  01/10), 6 rejets (1 773,40 EUR). Le fichier SEPA (`pain.008`) n'est pas lu.
 - **Garde-fou de periode** : l'ecran DGI/FEC propose la fin de l'exercice ; un FEC qui ferait perdre plus de
   10 ecritures deja chargees (`SEUIL_RECUL`) est refuse (`--accepter-recul` pour forcer). On compte les ecritures
   perdues et non la date de la derniere ecriture : supprimer une ecriture recente fait reculer cette date (constate

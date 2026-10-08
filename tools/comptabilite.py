@@ -405,3 +405,117 @@ def impayes_et_retards(conn, date_reference: str | None = None, seuil: float = 1
         "comptes_sans_responsable": inconnus,
         "note": _note(m, date_ref, delai_jours),
     }
+
+
+# ------------------------------------------------------------------ remises de prelevement
+
+def _factures(conn) -> dict[int, list[dict]]:
+    """Toutes les factures validees de chaque responsable, dans l'ordre (echeancier de chacune)."""
+    try:
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(FAC_HISTO_FAMILLE)")]
+    except sqlite3.OperationalError:
+        return {}
+    res = defaultdict(list)
+    for row in conn.execute("SELECT * FROM FAC_HISTO_FAMILLE ORDER BY CAST(IDVALIDATION AS INTEGER)"):
+        f = dict(zip(cols, row))
+        ech = [(f.get(f"HF_ECHE_DATE{k}"), _num(f.get(f"HF_ECHE_PRIX{k}"))) for k in range(1, 13)]
+        res[int(f["IDRESPONSABLE"])].append({"date": f.get("HF_DATE_FACTURE") or "", "mode": f.get("HF_MODE_REGLEMENT"),
+                                             "echeances": [(d_, m) for d_, m in ech if d_ and m]})
+    return res
+
+
+def _attendus(factures: dict, date_ech: str, mode_prel: str) -> dict[int, float]:
+    """Montant de prelevement attendu a date_ech, d'apres la facture en vigueur a cette date."""
+    att = {}
+    for rid, fs in factures.items():
+        en_vigueur = [f for f in fs if f["date"] <= date_ech]
+        if not en_vigueur or en_vigueur[-1]["mode"] != mode_prel:
+            continue
+        m = sum(mm for d_, mm in en_vigueur[-1]["echeances"] if d_ == date_ech)
+        if m:
+            att[rid] = round(m, 2)
+    return att
+
+
+def controle_prelevements(conn, date_echeance: str | None = None, fenetre_jours: int = 15,
+                          mode_prelevement: str = "Prélèvement") -> dict:
+    """Compare une echeance de prelevement aux prelevements comptabilises et aux rejets qui ont suivi."""
+    m = meta(conn)
+    factures = _factures(conn)
+    if not factures:
+        raise ValueError("Aucune facture validee dans la base Administratif (FAC_HISTO_FAMILLE).")
+    dates = sorted({d_ for fs in factures.values() for f in fs if f["mode"] == mode_prelevement
+                    for d_, _ in f["echeances"]})
+    if not dates:
+        raise ValueError(f"Aucune echeance de mode {mode_prelevement!r} dans les factures.")
+    d_ech = _parse_date(date_echeance)
+    if d_ech is None:
+        passees = [d_ for d_ in dates if d_ <= m["periode_fin"]]
+        if not passees:
+            raise ValueError("Aucune echeance de prelevement anterieure a la derniere ecriture du FEC.")
+        d_ech = passees[-1]
+    elif d_ech not in dates:
+        raise ValueError(f"Pas d'echeance de prelevement le {_iso(d_ech)} ; echeances : "
+                         + ", ".join(_iso(x) for x in dates))
+    fin = (_d(d_ech) + timedelta(days=fenetre_jours)).strftime("%Y%m%d")
+    suivantes = [d_ for d_ in dates if d_ > d_ech]
+    borne_rejets = suivantes[0] if suivantes else "99999999"   # rejets imputes a cette echeance
+    par_compte, par_id = _responsables(conn)
+    att = _attendus(factures, d_ech, mode_prelevement)
+    fact, an = _journaux_speciaux(conn)
+    frais = _pieces_frais(conn)
+    preleve, dates_cpta, rejets = defaultdict(float), Counter(), defaultdict(list)
+    for c, es in _mouvements(conn).items():
+        for e in es:
+            if not (d_ech <= e["date_ecriture"]):
+                continue
+            nature = classer(e, fact, an, frais)
+            if (e["date_ecriture"] <= fin and nature == "reglement"
+                    and _mode(e["libelle"], e["piece_ref"]) == "prelevement"):
+                preleve[c] += e["credit"]
+                dates_cpta[_iso(e["date_ecriture"])] += 1
+            elif nature == "impaye" and e["date_ecriture"] < borne_rejets:
+                rejets[c].append(e)
+    rid_de = {c: r["id_responsable"] for c, r in par_compte.items()}
+    nom = lambda c: (par_compte.get(c) or {}).get("responsable")  # noqa: E731
+    attendus_c = {par_id[r]: v for r, v in att.items() if r in par_id}
+    manquants = [{"compte": c, "responsable": nom(c), "id_responsable": rid_de.get(c), "attendu": v}
+                 for c, v in sorted(attendus_c.items()) if c not in preleve]
+    ecarts = [{"compte": c, "responsable": nom(c), "id_responsable": rid_de.get(c), "attendu": v,
+               "preleve": round(preleve[c], 2), "ecart": round(preleve[c] - v, 2)}
+              for c, v in sorted(attendus_c.items()) if c in preleve and abs(preleve[c] - v) > 0.01]
+    sans = [{"compte": c, "responsable": nom(c), "id_responsable": rid_de.get(c), "preleve": round(v, 2)}
+            for c, v in sorted(preleve.items()) if c not in attendus_c]
+    rej = [{"compte": c, "responsable": nom(c), "id_responsable": rid_de.get(c),
+            "rejets": [{"date": _iso(e["date_ecriture"]), "montant": round(e["debit"], 2), "libelle": e["libelle"]}
+                       for e in es]}
+           for c, es in sorted(rejets.items()) if c in preleve]
+    total_rej = round(sum(x["montant"] for r in rej for x in r["rejets"]), 2)
+    prochaine = None
+    if suivantes:
+        a2 = _attendus(factures, suivantes[0], mode_prelevement)
+        prochaine = {"date": _iso(suivantes[0]), "familles": len(a2), "montant": round(sum(a2.values()), 2)}
+    if not preleve:   # remise pas encore passee en comptabilite : lister les 251 familles n'apprendrait rien
+        manquants = []
+    statut = ("remise non encore comptabilisee" if not preleve else
+              "conforme" if not (manquants or ecarts or sans) else "ecarts a examiner")
+    return {
+        "date_echeance": _iso(d_ech),
+        "statut": statut,
+        "attendu": {"familles": len(attendus_c), "montant": round(sum(attendus_c.values()), 2)},
+        "preleve": {"familles": len(preleve), "montant": round(sum(preleve.values()), 2),
+                    "comptabilise_le": dict(sorted(dates_cpta.items()))},
+        "rejets_saisis": {"familles": len(rej), "montant": total_rej},
+        "encaisse_net": round(sum(preleve.values()) - total_rej, 2),
+        "manquants": manquants[:MAX_ELEMENTS],
+        "ecarts_de_montant": ecarts[:MAX_ELEMENTS],
+        "preleves_sans_echeance_attendue": sans[:MAX_ELEMENTS],
+        "rejets": rej[:MAX_ELEMENTS],
+        "prochaine_echeance": prochaine,
+        "echeances_de_l_annee": [_iso(x) for x in dates],
+        "note": (f"Attendu : echeance du {_iso(d_ech)} de la facture en vigueur a cette date, familles en "
+                 f"{mode_prelevement} sur la facture. Preleve : reglements « prelevement » sur les comptes 411 "
+                 f"comptabilises du {_iso(d_ech)} au {_iso(fin)} (FEC charge le {m['charge_le']}, ecritures jusqu'au "
+                 f"{_iso(m['periode_fin'])}). Rejets : impayes saisis entre cette echeance et la suivante. Le fichier de remise SEPA "
+                 "lui-meme n'est pas lu."),
+    }
