@@ -24,6 +24,11 @@ pour une prestation suivie depuis la rentree). La regularisation proposee porte
 sur les mois a partir de `date_effet` : attendu x mois restants / nb mois, moins
 ce qui est deja couvert pour ces mois.
 
+Montant propose a la saisie (regles["prorata"]["saisie"]) : "prorata" (defaut) ou
+"plein" (tarif annuel - deja facture, sans prorata) - choix de l'etablissement
+pour les complements et avoirs en cours d'annee. Les deux montants restent
+toujours renvoyes ; les departs gardent l'avoir sur les mois suivant la sortie.
+
 Lecture seule. Aucune donnee bancaire n'est renvoyee.
 """
 
@@ -196,6 +201,9 @@ def regularisations_a_preparer(conn, regles: dict, date_effet: str | None = None
         raise ValueError(f"date_effet {d_effet.isoformat()} hors des mois factures : indiquer une date entre "
                          f"le premier et le dernier mois de l'annee scolaire.")
     restants = mois_restants(m0, regles)
+    mode_saisie = (regles.get("prorata") or {}).get("saisie", "prorata")
+    if mode_saisie not in ("prorata", "plein"):
+        raise ValueError(f"regles prorata.saisie = {mode_saisie!r} : attendu 'prorata' ou 'plein'.")
     validations = _validations(conn)
     premiere = min(validations) if validations else 1
     lignes = _lignes(conn)
@@ -223,14 +231,17 @@ def regularisations_a_preparer(conn, regles: dict, date_effet: str | None = None
         rest = mois_restants(m_eff, regles)
         plein = round(tarif - deja, 2)
         prorata = round(tarif * rest / nb - couvert, 2)
-        sens = "complement" if prorata > 0 or (prorata == 0 and plein > 0) else "avoir"
-        quote = {ctx.rn.get(r, str(r)): round(prorata * p / 100, 2) for r, p in ctx.pay[i].items()} if ctx.pay[i] else {}
+        saisi = plein if mode_saisie == "plein" else prorata
+        autre = prorata if mode_saisie == "plein" else plein
+        sens = "complement" if saisi > 0 or (saisi == 0 and autre > 0) else "avoir"
+        quote = {ctx.rn.get(r, str(r)): round(saisi * p / 100, 2) for r, p in ctx.pay[i].items()} if ctx.pay[i] else {}
         periode_l = f"{libelle_mois(m_eff, regles)} -> {libelle_mois(nb, regles)} ({rest}/{nb})"
-        libelle = f"{lib_lignes.get(code, code)} - {'complement' if sens == 'complement' else 'avoir'} {periode_l}"
+        suffixe = "annuel" if mode_saisie == "plein" else periode_l
+        libelle = f"{lib_lignes.get(code, code)} - {'complement' if sens == 'complement' else 'avoir'} {suffixe}"
         d = {"code": code, "libelle_ligne": lib_lignes.get(code, code), "motif": motif, "sens": sens,
              "tarif_annuel": tarif, "deja_facture": round(deja, 2), "couvert_sur_periode": round(couvert, 2),
              "montant_plein": plein, "montant_prorata": prorata, "periode": periode_l,
-             "saisie_proposee": {"quantite": 1, "prix": prorata, "libelle": libelle},
+             "saisie_proposee": {"quantite": 1, "prix": saisi, "libelle": libelle},
              "quote_part_payeurs": quote}
         if attente.get((i, code)):
             d["deja_en_preparation_manuelle"] = round(attente[(i, code)], 2)
@@ -387,7 +398,9 @@ def regularisations_a_preparer(conn, regles: dict, date_effet: str | None = None
         "a_saisir_avant_de_facturer": a_saisir[:MAX_ELEMENTS],
         "information_saisie_sans_piece": sans_piece[:MAX_ELEMENTS],
         "anomalies_donnees_sources": anomalies_sources[:MAX_ELEMENTS],
-        "note": ("Donnees a la date du dernier export. montant_prorata = tarif x mois restants / nb mois, moins ce qui "
+        "mode_saisie": mode_saisie,
+        "note": ("Donnees a la date du dernier export. saisie_proposee.prix = montant_" + mode_saisie + " (regles "
+                 "prorata.saisie). montant_prorata = tarif x mois restants / nb mois, moins ce qui "
                  "est deja couvert pour ces mois ; montant_plein = tarif - deja facture (sans prorata). Une ligne "
                  "negative est un avoir. A saisir dans Charlemagne en facture complementaire manuelle (la validation "
                  "reprend le solde restant et re-etale l'echeancier) ; les reductions et l'APEL sont des decisions de "

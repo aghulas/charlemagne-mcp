@@ -206,3 +206,23 @@ def test_suivi_echeanciers(conn):
     assert r["alertes"]["echeancier_incoherent"][0]["somme_echeances"] == 874
     with pytest.raises(ValueError):
         suivi_echeanciers(conn, REGLES, id_responsable="99", aujourd_hui=AUJ)
+
+
+
+def test_saisie_au_montant_plein(conn):
+    """regles prorata.saisie = "plein" : la saisie proposee prend le montant plein
+    (decision de l'etablissement), les deux montants restent renvoyes."""
+    import copy
+    regles = copy.deepcopy(REGLES)
+    regles["prorata"]["saisie"] = "plein"
+    r = regularisations_a_preparer(conn, regles, aujourd_hui=AUJ)
+    assert r["mode_saisie"] == "plein"
+    a = next(x for x in r["regularisations"] if x["id_eleve"] == 1)
+    lignes = {l["code"]: l for l in a["lignes"]}
+    assert lignes["CANT2J"]["saisie_proposee"]["prix"] == -200 and lignes["CANT2J"]["sens"] == "avoir"
+    assert lignes["CANT3J"]["saisie_proposee"]["prix"] == 300 and lignes["CANT3J"]["montant_prorata"] == 270
+    assert lignes["CANT3J"]["quote_part_payeurs"] == {"RA x": 300}
+    assert lignes["CANT3J"]["saisie_proposee"]["libelle"].endswith("annuel")
+    regles["prorata"]["saisie"] = "autre"
+    with pytest.raises(ValueError):
+        regularisations_a_preparer(conn, regles, aujourd_hui=AUJ)
