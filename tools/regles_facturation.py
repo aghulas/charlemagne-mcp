@@ -185,6 +185,9 @@ class Contexte:
                 anomalies.append("externe_avec_jours_de_cantine")
             if str(reg) not in (str(can.get("regime_externe")), str(can.get("regime_panier"))) and not nb:
                 anomalies.append("demi_pensionnaire_sans_jour")
+        gratuit = set(R.get("personnel", {}).get("garderie_etude_gratuites", []))
+        if gar and gratuit and any(self.q2.get(r) in gratuit for r in self.pay[i]):
+            gar = {}  # enfants du personnel : garderie et etude non facturees
         if gar:
             ne, nmat = a.get(gar["activite_etude"], 0), a.get(gar["activite_matin"], 0)
             if ne == gar.get("jours_forfait", 4) and nmat and gar.get("ligne_forfait"):

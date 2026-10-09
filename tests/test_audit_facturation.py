@@ -124,3 +124,15 @@ def test_preparation_vide(conn):
     conn.execute("DELETE FROM FAC_GESTION_LIGNE")
     with pytest.raises(ValueError):
         audit_facturation(conn, REGLES)
+
+
+def test_garderie_etude_gratuites_pour_le_personnel(conn):
+    # Bob (forfait matin + soir) devient enfant du personnel ; garderie et etude non facturees
+    conn.execute("UPDATE COM_RESPONSABLES SET RE_QUOTIENT2 = 'PERSO' WHERE IDRESPONSABLE = '10'")
+    conn.execute("DELETE FROM FAC_GESTION_LIGNE WHERE GL_CODE_LIGNE = 'FMS'")
+    a = audit_facturation(conn, REGLES)["anomalies"]
+    # sans la regle : le forfait manquant est signale
+    assert any(x["ligne"] == "FMS" for x in a["ligne_incorrecte"])
+    regles = dict(REGLES, personnel={"garderie_etude_gratuites": ["PERSO"]})
+    a = audit_facturation(conn, regles)["anomalies"]
+    assert not any(x["ligne"] in ("FMS", "GM", "ET4J") for x in a["ligne_incorrecte"])
