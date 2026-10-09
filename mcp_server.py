@@ -33,6 +33,7 @@ from tools import (
     historique_mails,
     journal_ecoledirecte,
     modifications,
+    observations,
     personnels,
     responsables,
     suivi_facturation,
@@ -325,8 +326,9 @@ def register_tools(server: MCPServer) -> None:
             "foyer (id_foyer = IDFOYER) : foyer (cotisation APEL Oui/Ext/Non), responsables (lien, "
             "responsable principal, payeur et pourcentage, mode de reglement, IBAN renseigne ou "
             "non, enfants a charge, quotients, informations complementaires - ex. Ext. scolarisee, "
-            "Justificatif Fraterie), enfants (classe, regime, jours de cantine, activites, "
-            "informations complementaires, remises), lignes facturees non nulles (preparation en "
+            "Justificatif Fraterie, observation et observation de facturation), enfants (classe, regime, "
+            "jours de cantine, activites, informations complementaires, remises, observation de la "
+            "fiche eleve), lignes facturees non nulles (preparation en "
             "cours, sinon cumul de toutes les factures validees de l'annee avec le detail par "
             "facture et les echeances ; validee=True/False pour forcer) avec le total par "
             "responsable, les lignes manuelles en attente de validation, et pieces a verser recues ou non. A utiliser pour verifier une "
@@ -347,6 +349,35 @@ def register_tools(server: MCPServer) -> None:
         finally:
             conn.close()
         return _avec_comptabilite(res)
+
+    @server.tool(
+        description=(
+            "Observations saisies sur les fiches eleve (et, le cas echeant, sur les fiches de leurs "
+            "responsables : observation et observation de facturation), en texte brut. L'ecole y "
+            "documente les cas particuliers : jours de cantine, garderie ou etude convenus hors fiche "
+            "forfaits, changements de forfait en cours d'annee, contraintes de la famille. A consulter "
+            "avant de conclure qu'une presence est exceptionnelle ou qu'une facture est erronee. Chaque "
+            "eleve est renvoye avec ses jours de cantine et ses activites Charlemagne pour comparaison. "
+            "Renvoie aussi les informations complementaires « Suivi prestations » (accords en vigueur, "
+            "format v1 decode), « A faire » (instruction en attente pour le secretariat si elle commence "
+            "par #) et « A facturer » (facturation a preparer si elle commence par #F) et le journal [C] "
+            "recopie par le secretariat dans l'observation. Filtres : recherche (texte, sans accents ni "
+            "casse), classe (libelle partiel), inclure_sortis, avec_vides (aussi les eleves sans "
+            "observation), a_faire_seulement, a_facturer_seulement (instructions en attente)."
+        )
+    )
+    def observations_familles(recherche: str | None = None, classe: str | None = None,
+                              inclure_sortis: bool = False, avec_vides: bool = False,
+                              a_faire_seulement: bool = False, a_facturer_seulement: bool = False) -> dict:
+        """Observations des fiches eleve et responsable."""
+        conn = get_connection()
+        try:
+            return observations.observations(conn, recherche=recherche, classe=classe,
+                                             inclure_sortis=inclure_sortis, avec_vides=avec_vides,
+                                             a_faire_seulement=a_faire_seulement,
+                                             a_facturer_seulement=a_facturer_seulement)
+        finally:
+            conn.close()
 
     @server.tool(
         description=(

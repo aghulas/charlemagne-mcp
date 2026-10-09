@@ -4,7 +4,7 @@ A partir d'un eleve (IDELEVE) ou d'un foyer (IDFOYER) : foyer (cotisation APEL),
 responsables (lien, responsable principal, payeur et pourcentage, mode de reglement,
 IBAN renseigne ou non, enfants a charge, quotients, informations complementaires),
 enfants (classe, regime, jours de cantine, activites, informations complementaires,
-remises), lignes facturees (preparation en cours, ou derniere facturation validee) et
+remises, observation de la fiche eleve), lignes facturees (preparation en cours, ou derniere facturation validee) et
 pieces a verser recues.
 
 Lecture seule. Aucune coordonnee bancaire n'est renvoyee (seulement renseigne / vide).
@@ -13,6 +13,7 @@ Lecture seule. Aucune coordonnee bancaire n'est renvoyee (seulement renseigne / 
 import sqlite3
 
 from tools.referentiels import libelles_csp, libelles_liens, libelles_situations_familiales
+from tools.texte import rtf_en_texte
 
 JOURS = (("lundi", "1"), ("mardi", "2"), ("mercredi", "3"), ("jeudi", "4"), ("vendredi", "5"))
 
@@ -118,6 +119,7 @@ def fiche_famille(conn, id_eleve: str | None = None, id_foyer: str | None = None
             "regime": regimes.get(str(e.get("EL_IDREGIME")), e.get("EL_IDREGIME")),
             "jours_cantine": _jours(e, "EL_REPASMIDI"),
             "activites": act, "informations_complementaires": infos, "remises": remises,
+            "observation": rtf_en_texte(e.get("EL_OBSERVATION")) or None,
         })
 
     # --- responsables (jamais de coordonnees bancaires : seulement renseigne / vide)
@@ -135,6 +137,8 @@ def fiche_famille(conn, id_eleve: str | None = None, id_foyer: str | None = None
             "enfants_a_charge": r.get("RE_ENF_A_CHARGE"), "quotient1": r.get("RE_QUOTIENT1") or None,
             "quotient2": r.get("RE_QUOTIENT2") or None, "cotisation_apel": r.get("RE_COT_APEL") or None,
             "informations_complementaires": infos,
+            "observation": rtf_en_texte(r.get("RE_OBSERVATION")) or None,
+            "observation_facturation": rtf_en_texte(r.get("RE_OBSERVATION_FACTU")) or None,
             "liens": [{"id_eleve": str(l["IDELEVE"]), "eleve": noms_e.get(str(l["IDELEVE"])), "lien": l.get("LER_LIEN"),
                        "lien_libelle": lib_lien.get(l.get("LER_LIEN"), l.get("LER_LIEN")),
                        "responsable_principal": str(l.get("LER_TYPE_RESP")) == "1",
