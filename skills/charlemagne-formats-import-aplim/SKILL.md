@@ -16,6 +16,20 @@ Formats qui ont leur propre skill : informations complémentaires élèves
 frais et avoirs de facturation (`charlemagne-import-frais-facturation`), emplois du temps
 (`charlemagne-import-emploi-du-temps`), photos (`charlemagne-affectation-photos`).
 
+## Documentation Aplim : où chercher (détail : doc projet `claude/aide-en-ligne-aplim.md`)
+
+- **Aide en ligne Charlemagne** (base de connaissances, ouverte aussi depuis Charlemagne) :
+  https://aide.aplim.mayday.cx/fr-fr — le site **interdit les robots** : ne pas le lire par curl ou un
+  navigateur automatisé. Donner le lien à l'utilisateur et lui demander de coller l'article ou une capture.
+- Fiches « Charlemagne Procédures » en PDF sur `static.helpjuice.com/.../16811/...` : lisibles par
+  WebFetch quand une recherche web les trouve.
+- Support (notes d'import, manuels) : https://www.aplim.fr/ressources/support ; tutoriels
+  https://www.aplim.fr/ressources/tutoriels ; formations https://formation.aplim.fr/ ; statut
+  https://status.aplim.fr/status/aplim/.
+- Modèle de données utile aux imports : l'**adresse appartient au foyer** (un parent qui habite ailleurs =
+  son propre foyer, icône de séparation) ; `RE_ADRESSE*` des responsables n'est ni modifiable ni utilisé
+  (factures et EcoleDirecte prennent le foyer).
+
 ## Retrouver les notes
 
 - La page support est une application Next.js : l'arborescence des documents est dans un chunk
