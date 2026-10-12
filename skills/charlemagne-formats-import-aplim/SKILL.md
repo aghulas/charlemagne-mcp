@@ -18,9 +18,15 @@ frais et avoirs de facturation (`charlemagne-import-frais-facturation`), emplois
 
 ## Documentation Aplim : où chercher (détail : doc projet `claude/aide-en-ligne-aplim.md`)
 
-- **Aide en ligne Charlemagne** (base de connaissances, ouverte aussi depuis Charlemagne) :
-  https://aide.aplim.mayday.cx/fr-fr — le site **interdit les robots** : ne pas le lire par curl ou un
-  navigateur automatisé. Donner le lien à l'utilisateur et lui demander de coller l'article ou une capture.
+- **Aide en ligne Charlemagne** (https://aide.aplim.mayday.cx/fr-fr) : copiée en entier dans les
+  documents du projet sous `aide-aplim/` (1 843 articles au 12/10/2026, liens des PDF joints lisibles par
+  WebFetch). Y chercher l'aide contextuelle de l'écran d'import visé : `project_search`, ou l'index du
+  module (`aide-aplim/NN-<module>/00-index.md`, par exemple `07-comptabilite` pour l'import d'écritures,
+  `01-administratif` pour les imports d'élèves ou d'adultes), puis `project_read` du document indiqué.
+  Méthode complète : skills `aide-charlemagne-gestion`, `aide-charlemagne-compta-paie-rh`,
+  `aide-charlemagne-pedagogie-ecoledirecte`. Le site lui-même interdit les robots : ne jamais le lire en
+  direct (curl, WebFetch, navigateur automatisé) ; un article introuvable dans la copie se demande à
+  l'utilisateur.
 - Fiches « Charlemagne Procédures » en PDF sur `static.helpjuice.com/.../16811/...` : lisibles par
   WebFetch quand une recherche web les trouve.
 - Support (notes d'import, manuels) : https://www.aplim.fr/ressources/support ; tutoriels
@@ -59,7 +65,8 @@ frais et avoirs de facturation (`charlemagne-import-frais-facturation`), emplois
 
 ## Déroulé
 
-1. Identifier l'écran d'import visé et la note correspondante (tableau de la doc projet) ; si la note
+1. Identifier l'écran d'import visé et la note correspondante (tableau de la doc projet) ; lire aussi
+   l'aide contextuelle de cet écran dans `aide-aplim/` (options, cases à cocher, messages). Si la note
    n'existe pas (ex. informations complémentaires des responsables), le dire : pas d'import, liste de
    saisie manuelle.
 2. Rassembler les données source et résoudre les identifiants ; lister les lignes ambiguës ou
