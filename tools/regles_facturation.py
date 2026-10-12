@@ -101,16 +101,22 @@ class Contexte:
         self.rn = {int(r[0]): f"{r[1]} {r[2]}" for r in q(
             "SELECT IDRESPONSABLE, RE_NOM1, RE_PRENOM1 FROM COM_RESPONSABLES")}
         self.pay, self.princ = defaultdict(dict), {}
+        self.resp_eleve = defaultdict(set)   # eleve -> tous ses responsables (COM_LIENER)
         for eid, rid, typ, v, pct in q(
                 "SELECT IDELEVE, IDRESPONSABLE, LER_TYPE_RESP, LER_VERSQUI, LER_POURCENTAGE FROM COM_LIENER"):
             eid, rid = int(eid), int(rid)
             if eid not in self.el:
                 continue
+            self.resp_eleve[eid].add(rid)
             if str(typ) == "1":
                 self.princ[eid] = rid
             if str(v) == "1" and num(pct):
                 self.pay[eid][rid] = num(pct)
         self.enf = defaultdict(set)          # responsable principal -> enfants a l'ecole
+        self.enf_tous = defaultdict(set)     # responsable (tout lien) -> enfants a l'ecole
+        for e, rs in self.resp_eleve.items():
+            for r in rs:
+                self.enf_tous[r].add(e)
         for e, r in self.princ.items():
             self.enf[r].add(e)
         self.icr = defaultdict(dict)
@@ -146,6 +152,12 @@ class Contexte:
 
     def sortie(self, i: int) -> str:
         return self.el[i][6] if i in self.el else ""
+
+    def proches(self, rid: int) -> set[int]:
+        """Le responsable et tous les autres responsables de ses enfants a l'ecole
+        (autre parent, meme separe) : une piece deposee par l'un justifie l'information
+        saisie sur l'autre."""
+        return {rid} | {r for e in self.enf_tous.get(rid, ()) for r in self.resp_eleve.get(e, ())}
 
     def info(self, rid: int, debut: str):
         return next((v for k, v in self.icr[rid].items() if k.startswith(debut.lower())), None)

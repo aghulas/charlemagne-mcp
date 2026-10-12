@@ -189,7 +189,15 @@ la complementaire sur les mois restants ; `FAC_VALIDATION.VA_TYPE_FACTURE` = `To
   (contribution = lignes de la classe sur la facturation initiale), apel (sans prorata), remise
   personnel absente, lignes manuelles en attente (avec controle : conforme / deja conforme / a
   verifier), justificatifs recus sans information saisie (`regles["pieces_justificatifs"]`) et
-  l'inverse.
+  l'inverse. Depuis le 12/10/2026 : une piece ou une information portee par l'autre parent (tout
+  lien COM_LIENER, meme separe : `Contexte.proches`) ne declenche plus d'alerte ; seul l'etat
+  « Reçue » compte (« Non Reçue » n'est pas une piece) ; avec `id_eleve`, l'APEL (ligne famille,
+  IDELEVE = 0) et les justificatifs des responsables de l'eleve sont aussi calcules (avant : jamais).
+- `pieces_recues_depuis(archive=None)` (`tools/pieces.py`, 12/10/2026) : pieces a verser passees a
+  « Reçue » (depot EcoleDirecte recupere par Charlemagne) ou retirees (supprimees dans Charlemagne)
+  depuis une archive de `CHARLEMAGNE_ARCHIVES_DIR` ; liste, piece, personne (responsable pour les listes
+  de type F, eleve + classe pour le type E), etat avant/apres. Remplace la relecture de tous les comptes
+  EcoleDirecte (~36 min) pour reperer les nouveaux depots a verifier. Contenu des pieces jamais lu.
 - `suivi_echeanciers(id_responsable)` : factures de l'annee, echeances passees / a venir, reste a
   prelever, alertes (echeancier incoherent, mode de reglement modifie depuis la facture, prelevement
   sans IBAN, echeances irregulieres, payeur modifie, enfant du payeur non facture). Pas de statut
@@ -310,6 +318,7 @@ charlemagne-mcp/
 │   ├── audit_facturation.py             # audit_de_facturation (regles : CHARLEMAGNE_REGLES_FACTURATION)
 │   ├── suivi_facturation.py             # regularisations_a_preparer, suivi_echeanciers (cours d'annee)
 │   ├── comparaison.py                   # comparer_exports (archives : CHARLEMAGNE_ARCHIVES_DIR)
+│   ├── pieces.py                        # pieces_recues_depuis (pieces a verser recues / retirees)
 │   ├── historique_mails.py              # historique_mails_charlemagne (COM_HISTORIQUE_MAILS)
 │   └── journal_ecoledirecte.py          # journal_transferts_ecoledirecte (CHARLEMAGNE_JOURNAL_ED)
 ├── db/

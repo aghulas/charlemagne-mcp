@@ -177,13 +177,32 @@ def test_apel_justificatifs_et_filtres(conn):
     assert [(x["responsable"], x["piece"]) for x in r["information_saisie_sans_piece"]] == [("RA x", "Justif APEL")]
     # un seul eleve
     r1 = regularisations_a_preparer(conn, REGLES, id_eleve="1", aujourd_hui=AUJ)
-    assert [x["id_eleve"] for x in r1["regularisations"]] == [1] and r1["apel"] == []
+    assert [x["id_eleve"] for x in r1["regularisations"]] == [1]
+    # l'APEL (ligne famille, IDELEVE = 0) des payeurs de l'eleve est calculee aussi pour un eleve seul
+    assert [(x["responsable"], x["montant"]) for x in r1["apel"]] == [("RA x", -12)]
+    assert regularisations_a_preparer(conn, REGLES, id_eleve="4", aujourd_hui=AUJ)["apel"] == []
     with pytest.raises(ValueError):
         regularisations_a_preparer(conn, REGLES, id_eleve="99", aujourd_hui=AUJ)
     with pytest.raises(ValueError):
         regularisations_a_preparer(conn, REGLES, date_effet="2026-08-01", aujourd_hui=AUJ)
     # date d'effet explicite : janvier -> 6 mois
     assert regularisations_a_preparer(conn, REGLES, date_effet="2027-01-10", aujourd_hui=AUJ)["mois_restants"] == 6
+
+
+def test_justificatifs_entre_parents_et_non_recue(conn):
+    # RE, second parent de A (lien sans paiement), porte le justificatif APEL : plus d'alerte « sans piece » pour RA
+    conn.executescript("""
+        INSERT INTO COM_RESPONSABLES VALUES ('50', 'RE', 'x', '', 'Chèque', '', 'F1');
+        INSERT INTO COM_LIENER VALUES ('50', '1', '2', '0', '0');
+        INSERT INTO COM_LIEN_PIECE_PERSONNE VALUES ('101', '50');
+        INSERT INTO COM_PIECE_RECU VALUES ('101', '12', 'Reçue');
+    """)
+    r = regularisations_a_preparer(conn, REGLES, aujourd_hui=AUJ)
+    assert r["information_saisie_sans_piece"] == []
+    # une piece « Non Reçue » n'est jamais une piece recue
+    conn.execute("UPDATE COM_PIECE_RECU SET ETAT = 'Non Reçue' WHERE ID_LIEN_PIECE_PERSONNE = '100'")
+    r = regularisations_a_preparer(conn, REGLES, aujourd_hui=AUJ)
+    assert r["a_saisir_avant_de_facturer"] == []
 
 
 def test_suivi_echeanciers(conn):

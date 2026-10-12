@@ -35,6 +35,7 @@ from tools import (
     modifications,
     observations,
     personnels,
+    pieces,
     responsables,
     suivi_facturation,
     vie_scolaire,
@@ -265,7 +266,9 @@ def register_tools(server: MCPServer) -> None:
             "sur les mois suivant la sortie), l'APEL, la remise personnel absente, les lignes "
             "manuelles deja saisies dans Charlemagne et non validees (avec un controle), et les "
             "justificatifs recus dont l'information complementaire n'est pas encore saisie (a faire "
-            "avant de facturer). id_eleve : un seul eleve. Lecture seule, aucune donnee bancaire."
+            "avant de facturer ; une piece ou une information portee par l'autre parent, meme "
+            "separe, compte). id_eleve : un seul eleve (avec l'APEL et les justificatifs de ses "
+            "responsables). Lecture seule, aucune donnee bancaire."
         )
     )
     def regularisations_a_preparer(date_effet: str | None = None, id_eleve: str | None = None) -> dict:
@@ -428,6 +431,45 @@ def register_tools(server: MCPServer) -> None:
                                                            limite=limite)
         except ValueError as exc:
             return {"error": str(exc)}
+
+    @server.tool(
+        description=(
+            "Pieces a verser (justificatifs APEL et fratrie, attestations employeur et assurance, "
+            "fiches rentree, autorisations...) passees a « Recue » ou retirees depuis un export "
+            "precedent archive (par defaut le plus recent de CHARLEMAGNE_ARCHIVES_DIR ; sinon le nom "
+            "de fichier) : liste, piece, personne (responsable ou eleve, classe), etat avant/apres. "
+            "Une piece recue a ete deposee dans EcoleDirecte et recuperee par Charlemagne ; une piece "
+            "retiree a ete supprimee dans Charlemagne. A utiliser apres une synchronisation pour savoir "
+            "quelles nouvelles pieces verifier, sans relire tous les comptes EcoleDirecte. Le contenu "
+            "des pieces n'est pas lu. Lecture seule."
+        )
+    )
+    def pieces_recues_depuis(archive: str | None = None) -> dict:
+        """Pieces recues ou retirees entre la base actuelle et une archive."""
+        archives = comparaison.lister_archives()
+        if archive:
+            choix = [a for a in archives if a.endswith(archive)]
+            if not choix:
+                return {"error": f"Archive {archive!r} introuvable.", "archives_disponibles": [a.rsplit('/', 1)[-1] for a in archives[-10:]]}
+            chemin = choix[-1]
+        elif archives:
+            chemin = archives[-1]
+        else:
+            return {"error": "Aucune archive : definir CHARLEMAGNE_ARCHIVES_DIR."}
+        conn = get_connection()
+        try:
+            prec = comparaison.ouvrir_archive(chemin)
+        except ValueError as exc:
+            conn.close()
+            return {"error": str(exc)}
+        try:
+            res = pieces.pieces_changees(conn, prec)
+            res["archive_comparee"] = chemin.rsplit("/", 1)[-1]
+            return res
+        except ValueError as exc:
+            return {"error": str(exc)}
+        finally:
+            conn.close(); prec.close()
 
     @server.tool(
         description=(

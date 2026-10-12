@@ -168,6 +168,11 @@ def _lignes_manuelles_en_attente(conn, ctx: Contexte) -> list[dict]:
              "libelle": lib} for r, e, c, q, lib, p in rows]
 
 
+def _est_recue(etat) -> bool:
+    """« Recue » (et pas « Non Recue ») : l'etat de COM_PIECE_RECU, quel que soit l'accent."""
+    return bool(etat) and str(etat).strip().lower().startswith("re")
+
+
 def _pieces_recues(conn) -> dict[tuple[str, str], str]:
     """(id personne, libelle de la piece) -> etat, pour les listes de type F (responsables)
     et E (eleves). Tables absentes -> vide."""
@@ -308,13 +313,22 @@ def regularisations_a_preparer(conn, regles: dict, date_effet: str | None = None
     # APEL par responsable (pas de prorata : cotisation annuelle)
     apel = []
     ap_r = regles.get("apel")
-    if ap_r and id_eleve in (None, ""):
+    # avec id_eleve : APEL des payeurs de l'eleve (la ligne APEL est une ligne famille,
+    # IDELEVE = 0 : sans ce perimetre, un eleve seul ne montrait jamais l'APEL)
+    perimetre = None
+    if id_eleve not in (None, ""):
+        perimetre = set()
+        for r in set(ctx.pay[int(id_eleve)]) | ctx.resp_eleve.get(int(id_eleve), set()):
+            perimetre |= ctx.proches(r)
+    if ap_r:
         cumul = defaultdict(float)
         for l in lignes:
             if l["code"] == ap_r["ligne"]:
                 cumul[l["responsable"]] += l["total"]
-        rids = {r for i in ctx.el for r in ctx.pay[i]}
-        for rid in sorted(rids | set(cumul)):
+        rids = {r for i in ctx.el for r in ctx.pay[i]} | set(cumul)
+        if perimetre is not None:
+            rids &= perimetre
+        for rid in sorted(rids):
             att = ctx.apel_attendue(rid)
             delta = round(att - cumul.get(rid, 0), 2)
             if abs(delta) > .01:
@@ -336,22 +350,32 @@ def regularisations_a_preparer(conn, regles: dict, date_effet: str | None = None
     # justificatifs : piece recue mais information non saisie, et l'inverse
     a_saisir, sans_piece = [], []
     pj = regles.get("pieces_justificatifs", [])
-    if pj and id_eleve in (None, ""):
+    if pj:
         recues = _pieces_recues(conn)
         rids = {r for i in ctx.el for r in ctx.pay[i]} | {r for i in ctx.el if (r := ctx.princ.get(i)) is not None}
+        if perimetre is not None:
+            rids &= perimetre
+
+        def saisie_sur(r, regle):
+            if "quotient2_parmi" in regle:
+                return ctx.q2.get(r) in set(regle["quotient2_parmi"])
+            return str(ctx.info(r, regle["info_responsable"]) or "") == str(regle.get("valeur", 1))
+
         for rid in sorted(rids):
+            groupe = ctx.proches(rid)
             for regle in pj:
-                recue = recues.get((str(rid), regle["piece"]))
-                if "quotient2_parmi" in regle:
-                    saisie = ctx.q2.get(rid) in set(regle["quotient2_parmi"])
-                    attendu = f"quotient 2 parmi {regle['quotient2_parmi']}"
-                else:
-                    saisie = str(ctx.info(rid, regle["info_responsable"]) or "") == str(regle.get("valeur", 1))
-                    attendu = f"« {regle['info_responsable']} » = {regle.get('valeur', 1)}"
-                if recue and not saisie:
+                etat = recues.get((str(rid), regle["piece"]))
+                recue = etat if _est_recue(etat) else None
+                # piece ou information portee par l'autre parent (meme separe) : pas d'alerte
+                recue_groupe = any(_est_recue(recues.get((str(r), regle["piece"]))) for r in groupe)
+                saisie = saisie_sur(rid, regle)
+                saisie_groupe = any(saisie_sur(r, regle) for r in groupe)
+                attendu = (f"quotient 2 parmi {regle['quotient2_parmi']}" if "quotient2_parmi" in regle
+                           else f"« {regle['info_responsable']} » = {regle.get('valeur', 1)}")
+                if recue and not saisie_groupe:
                     a_saisir.append({"responsable": ctx.rn.get(rid, str(rid)), "piece": regle["piece"], "etat": recue,
                                      "a_saisir": attendu, "enfants": [ctx.nom(e) for e in sorted(ctx.enf.get(rid, ()))]})
-                elif saisie and not recue and regle.get("piece_obligatoire", True):
+                elif saisie and not recue_groupe and regle.get("piece_obligatoire", True):
                     sans_piece.append({"responsable": ctx.rn.get(rid, str(rid)), "piece": regle["piece"],
                                        "information_saisie": attendu})
 
