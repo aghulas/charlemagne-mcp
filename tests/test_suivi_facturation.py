@@ -265,3 +265,32 @@ def test_saisie_au_montant_plein(conn):
     regles["prorata"]["saisie"] = "autre"
     with pytest.raises(ValueError):
         regularisations_a_preparer(conn, regles, aujourd_hui=AUJ)
+
+
+def test_lignes_regul_compensent_la_ligne_d_origine(conn):
+    # E : etude 4 j facturee en septembre (40), passee a 1 j ; regularisation validee le 01/10 avec les
+    # lignes …REGUL (avoir sur l'ancienne ligne + facture sur la nouvelle) -> plus rien a proposer
+    conn.executescript("""
+        INSERT INTO COM_ELEVES VALUES ('5', 'E', 'e', 'C1', '20260901', '', '2', '0', '0', '0', '0');
+        INSERT INTO COM_RESPONSABLES VALUES ('50', 'RE', 'x', '', 'Prélèvement', 'FR76', 'F5');
+        INSERT INTO COM_FOYER VALUES ('F5', 'Non');
+        INSERT INTO COM_LIENER VALUES ('50', '5', '1', '1', '100');
+        INSERT INTO PA_SUIVI_CONSOMMATEUR VALUES ('ETUDE', '5', '1', '0', '0', '0');
+        INSERT INTO FAC_HISTO_LIGNE VALUES ('1', '5', '50', 'CONTRIB', '1000', '1', '1000', 'Contribution', '0', '0', '0');
+        INSERT INTO FAC_HISTO_LIGNE VALUES ('1', '5', '50', 'ET4J', '40', '1', '40', 'Etude 4 jours', '0', '0', '0');
+        INSERT INTO FAC_HISTO_LIGNE VALUES ('2', '5', '50', 'ET4JREGUL', '-40', '-1', '40', 'Etude 4 jours', '0', '0', '0');
+        INSERT INTO FAC_HISTO_LIGNE VALUES ('2', '5', '50', 'ET1JREGUL', '10', '1', '10', 'Etude 1 jour', '0', '0', '0');
+    """)
+    r = regularisations_a_preparer(conn, REGLES, aujourd_hui=AUJ)
+    assert all(x["id_eleve"] != 5 for x in r["regularisations"])
+    # une ligne manuelle en attente sur la ligne REGUL est controlee contre la ligne d'origine
+    conn.execute("INSERT INTO FAC_GESTION_HISTO VALUES ('50', '5', 'ET1JREGUL', '1', 'Etude 1 jour', '10')")
+    r = regularisations_a_preparer(conn, REGLES, aujourd_hui=AUJ)
+    a = next(x for x in r["lignes_manuelles_en_attente"] if x["id_eleve"] == 5)
+    assert a["code"] == "ET1JREGUL" and a["code_base"] == "ET1J" and a["controle"].startswith("ATTENTION")
+    # sans la regularisation validee, l'ecart serait propose sur les lignes d'origine
+    conn.execute("DELETE FROM FAC_HISTO_LIGNE WHERE HL_CODE_LIGNE LIKE '%REGUL'")
+    conn.execute("DELETE FROM FAC_GESTION_HISTO WHERE IDELEVE = '5'")
+    r = regularisations_a_preparer(conn, REGLES, aujourd_hui=AUJ)
+    e = next(x for x in r["regularisations"] if x["id_eleve"] == 5)
+    assert {l["code"]: l["montant_plein"] for l in e["lignes"]} == {"ET4J": -40, "ET1J": 10}

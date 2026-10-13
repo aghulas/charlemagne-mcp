@@ -33,6 +33,25 @@ def num(v) -> float:
         return 0.0
 
 
+# ------------------------------------------------- lignes de regularisation (…REGUL)
+
+def suffixe_regularisation(regles: dict) -> str:
+    """Suffixe des lignes de regularisation creees par l'etablissement (ex. ETUDE4JREGUL
+    compense ETUDE4J) : regles["lignes_regularisation"]["suffixe"], 'REGUL' par defaut,
+    '' pour desactiver."""
+    return str((regles.get("lignes_regularisation") or {}).get("suffixe", "REGUL"))
+
+
+def code_de_base(code, regles: dict) -> str:
+    """Code de ligne ramene a la ligne d'origine : 'ETUDE4JREGUL' -> 'ETUDE4J'. Les cumuls
+    (audit, regularisations, fiche famille) se font sur ce code ; le code reel reste affiche."""
+    code = str(code or "")
+    suf = suffixe_regularisation(regles)
+    if suf and len(code) > len(suf) and code.endswith(suf):
+        return code[:-len(suf)]
+    return code
+
+
 # ----------------------------------------------------------------- prorata au mois
 
 def prorata_regles(regles: dict) -> tuple[int, int]:

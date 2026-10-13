@@ -238,8 +238,10 @@ def register_tools(server: MCPServer) -> None:
             "remises, APEL, echeances, soldes reportes ; pour une facturation validee, "
             "numerotation et equilibre comptable. En cours d'annee, la facturation validee est le "
             "cumul de toutes les validations (initiale + factures complementaires) ; les lignes de "
-            "regularisation et les lignes au prorata sont signalees en information. A lancer apres "
-            "chaque nouvelle preparation, avant de valider. N'expose aucune donnee bancaire."
+            "regularisation et les lignes au prorata sont signalees en information ; une preparation "
+            "complementaire (quelques familles, lignes ...REGUL) est jugee sur le cumul facturation "
+            "validee + preparation, avec un controle de l'echeancier de chaque famille facturee. "
+            "A lancer apres chaque nouvelle preparation, avant de valider. N'expose aucune donnee bancaire."
         )
     )
     def audit_de_facturation(validee: bool = False) -> dict:

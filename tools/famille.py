@@ -12,7 +12,12 @@ Lecture seule. Aucune coordonnee bancaire n'est renvoyee (seulement renseigne / 
 
 import sqlite3
 
-from tools.referentiels import libelles_csp, libelles_liens, libelles_situations_familiales
+from tools.referentiels import (
+    libelles_csp,
+    libelles_liens,
+    libelles_situations_familiales,
+)
+from tools.regles_facturation import code_de_base
 from tools.texte import rtf_en_texte
 
 JOURS = (("lundi", "1"), ("mardi", "2"), ("mercredi", "3"), ("jeudi", "4"), ("vendredi", "5"))
@@ -167,6 +172,7 @@ def fiche_famille(conn, id_eleve: str | None = None, id_foyer: str | None = None
                         "responsable": noms_r.get(rid, rid),
                         **({"validation": l["IDVALIDATION"]} if "IDVALIDATION" in l else {}),
                         "code": l.get(f"{p}CODE_LIGNE"),
+                        **({"compense": base} if (base := code_de_base(l.get(f"{p}CODE_LIGNE"), {})) != l.get(f"{p}CODE_LIGNE") else {}),
                         "libelle": l.get(f"{p}LIBELLE_LIGNE"), "quantite": _num(l.get(f"{p}QUANTITE")),
                         "prix": _num(l.get(f"{p}PRIX")), "remise_eleve": remises[0], "remise_famille": remises[1],
                         "remise_auto": remises[2], "a_payer": a_payer,

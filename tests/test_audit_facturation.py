@@ -136,3 +136,53 @@ def test_garderie_etude_gratuites_pour_le_personnel(conn):
     regles = dict(REGLES, personnel={"garderie_etude_gratuites": ["PERSO"]})
     a = audit_facturation(conn, regles)["anomalies"]
     assert not any(x["ligne"] in ("FMS", "GM", "ET4J") for x in a["ligne_incorrecte"])
+
+
+def test_lignes_de_regularisation_compensent_la_ligne_d_origine(conn):
+    # Bob : 4 jours de cantine factures 3 jours (erreur), regularisee par un avoir CANT3JREGUL et une
+    # facture CANT4JREGUL : plus d'ecart, et les deux lignes sont listees avec la ligne qu'elles compensent
+    conn.executescript("""
+        INSERT INTO FAC_GESTION_LIGNE VALUES ('2', '10', 'CANT3JREGUL', '-300', '0', '0', '', '');
+        INSERT INTO FAC_GESTION_LIGNE VALUES ('2', '10', 'CANT4JREGUL', '400', '0', '0', '', '');
+    """)
+    a = audit_facturation(conn, REGLES)["anomalies"]
+    assert not any(x["eleve"].startswith("DURAND Bob") and x["ligne"].startswith("CANT") for x in a.get("ligne_incorrecte", []))
+    regul = {(x["ligne"], x["compense"], x["montant"]) for x in a["ligne_de_regularisation"]}
+    assert regul == {("CANT3JREGUL", "CANT3J", -300.0), ("CANT4JREGUL", "CANT4J", 400.0)}
+    # suffixe desactive : les lignes REGUL redeviennent des codes inconnus
+    a = audit_facturation(conn, {**REGLES, "lignes_regularisation": {"suffixe": ""}})["anomalies"]
+    assert {x["ligne"] for x in a["ligne_incorrecte"] if x["eleve"].startswith("DURAND Bob")} >= {"CANT3JREGUL", "CANT4JREGUL"}
+
+
+def test_preparation_complementaire_jugee_sur_le_cumul(conn):
+    # La facturation initiale est validee (FAC_HISTO_*) ; la preparation d'octobre ne contient que les
+    # lignes de regularisation de Bob (3 j -> 4 j de cantine) : rien d'autre ne doit etre signale.
+    conn.executescript("""
+        CREATE TABLE FAC_HISTO_LIGNE AS SELECT 1 AS IDVALIDATION, IDELEVE, IDRESPONSABLE, GL_CODE_LIGNE AS HL_CODE_LIGNE,
+            GL_TOTAL AS HL_TOTAL, GL_REMISE_MT_FAMILLE AS HL_REMISE_MT_FAMILLE, GL_REMISE_MT_ELEVE AS HL_REMISE_MT_ELEVE,
+            GL_REMISE_CODE_FAMILLE AS HL_REMISE_CODE_FAMILLE, GL_REMISE_CODE_ELEVE AS HL_REMISE_CODE_ELEVE FROM FAC_GESTION_LIGNE;
+        DELETE FROM FAC_GESTION_LIGNE;
+        INSERT INTO FAC_GESTION_LIGNE VALUES ('2', '10', 'CANT3JREGUL', '-300', '0', '0', '', '');
+        INSERT INTO FAC_GESTION_LIGNE VALUES ('2', '10', 'CANT4JREGUL', '400', '0', '0', '', '');
+        ALTER TABLE FAC_GESTION_FAMILLE ADD COLUMN GF_APAYER_FACTURE TEXT;
+        ALTER TABLE FAC_GESTION_FAMILLE ADD COLUMN GF_DATE_FACTURE TEXT;
+        -- DURAND : 100 de complement, solde restant 900 repris, le tout sur UNE echeance (a reactualiser)
+        UPDATE FAC_GESTION_FAMILLE SET GF_APAYER_FACTURE = '100', GF_DATE_FACTURE = '20261015', GF_ORI_SOLDE = '900',
+            GF_ECHE_PRIX1 = '0', GF_ECHE_PRIX2 = '0', GF_ECHE_PRIX3 = '0', GF_ECHE_PRIX4 = '0', GF_ECHE_PRIX5 = '0',
+            GF_ECHE_PRIX6 = '0', GF_ECHE_PRIX9 = '0', GF_ECHE_PRIX10 = '1000', GF_ECHE_PRIX11 = '0', GF_ECHE_PRIX12 = '0' WHERE IDRESPONSABLE = '10';
+        UPDATE FAC_GESTION_FAMILLE SET GF_APAYER_FACTURE = '0' WHERE IDRESPONSABLE = '21';
+    """)
+    r = audit_facturation(conn, REGLES)
+    assert r["facturation"] == "preparation_complementaire"
+    assert r["resume"]["preparation_complementaire"]["familles_facturees"] == 1
+    assert r["resume"]["preparation_complementaire"]["montant_total"] == 100
+    a = r["anomalies"]
+    # cumul initial + preparation : plus d'ecart de cantine pour Bob, les autres anomalies de la facturation initiale restent
+    assert not any(x["ligne"].startswith("CANT") for x in a.get("ligne_incorrecte", []))
+    assert {(x["ligne"], x["validation"]) for x in a["ligne_de_regularisation"]} == {("CANT3JREGUL", "preparation"), ("CANT4JREGUL", "preparation")}
+    assert [x["responsable"] for x in a["apel_incorrecte"]] == ["DURAND Jean"]
+    # le solde repris n'est pas une dette ; l'echeancier a une seule echeance de 1000 : alerte explicite
+    assert "solde_reporte_important" not in a
+    e = a["nombre_echeances_prelevement"]
+    assert len(e) == 1 and e[0]["echeances"] == 1 and e[0]["attendu"] == 9 and e[0]["montant_total_echeances"] == 1000
+    assert "reactualiser" in e[0]["attention"]

@@ -38,6 +38,7 @@ from datetime import date
 
 from tools.regles_facturation import (
     Contexte,
+    code_de_base,
     colonne,
     indice_mois,
     libelle_mois,
@@ -69,9 +70,10 @@ def _validations(conn) -> dict[int, dict]:
     return v
 
 
-def _lignes(conn) -> list[dict]:
+def _lignes(conn, regles: dict | None = None) -> list[dict]:
     """Lignes facturees de toutes les validations, hors lignes de regroupement
-    (CONTRIBUTION = somme de CONTRIB, DDEC... : les additionner compterait deux fois)."""
+    (CONTRIBUTION = somme de CONTRIB, DDEC... : les additionner compterait deux fois).
+    `code` est ramene a la ligne d'origine (ETUDE4JREGUL -> ETUDE4J), `code_reel` garde le code facture."""
     lib = colonne(conn, "FAC_HISTO_LIGNE", "HL_LIBELLE_LIGNE")
     regr = colonne(conn, "FAC_HISTO_LIGNE", "HL_REGROUPEMENT", defaut="'0'")
     rows = conn.execute(f"""SELECT IDVALIDATION, IDELEVE, IDRESPONSABLE, HL_CODE_LIGNE, HL_TOTAL, HL_QUANTITE, HL_PRIX,
@@ -84,7 +86,8 @@ def _lignes(conn) -> list[dict]:
         t = num(t)
         if not t and not num(rf) and not num(re_):
             continue
-        out.append({"validation": int(v or 1), "eleve": int(e or 0), "responsable": int(r or 0), "code": code,
+        out.append({"validation": int(v or 1), "eleve": int(e or 0), "responsable": int(r or 0),
+                    "code": code_de_base(code, regles or {}), "code_reel": code,
                     "total": t, "quantite": num(qte), "prix": num(prix), "libelle": libl,
                     "remise_famille": num(rf), "remise_eleve": num(re_)})
     return out
@@ -124,7 +127,7 @@ def _couverture(lignes: list[dict], validations: dict, tarifs: dict, regles: dic
             continue
         v, code, t = l["validation"], l["code"], l["total"]
         debut = 1
-        if v != premiere:
+        if v != premiere or l.get("code_reel", code) != code:
             plein = tarifs.get(code)
             if plein is None or abs(abs(t) - abs(plein)) > .02:
                 debut = indice_mois(validations.get(v, {}).get("date"), regles) or 1
@@ -164,7 +167,8 @@ def _lignes_manuelles_en_attente(conn, ctx: Contexte) -> list[dict]:
     except sqlite3.Error:
         return []
     return [{"responsable": ctx.rn.get(int(r or 0)), "eleve": ctx.nom(int(e or 0)) if e and int(e) else "(ligne famille)",
-             "id_eleve": int(e or 0), "code": c, "quantite": num(q), "prix": num(p), "montant": round(num(q) * num(p), 2),
+             "id_eleve": int(e or 0), "code": c, "code_base": code_de_base(c, ctx.regles), "quantite": num(q),
+             "prix": num(p), "montant": round(num(q) * num(p), 2),
              "libelle": lib} for r, e, c, q, lib, p in rows]
 
 
@@ -211,7 +215,7 @@ def regularisations_a_preparer(conn, regles: dict, date_effet: str | None = None
         raise ValueError(f"regles prorata.saisie = {mode_saisie!r} : attendu 'prorata' ou 'plein'.")
     validations = _validations(conn)
     premiere = min(validations) if validations else 1
-    lignes = _lignes(conn)
+    lignes = _lignes(conn, regles)
     tarifs = _tarifs_annuels(ctx)
     cov = _couverture(lignes, validations, tarifs, regles)
     lib_lignes = {r[0]: r[1] for r in conn.execute("SELECT LI_CODE, LI_LIBELLE FROM FAC_LIGNE")}
@@ -219,7 +223,7 @@ def regularisations_a_preparer(conn, regles: dict, date_effet: str | None = None
     en_attente = _lignes_manuelles_en_attente(conn, ctx)
     attente = defaultdict(float)
     for a in en_attente:
-        attente[(a["id_eleve"], a["code"])] += a["montant"]
+        attente[(a["id_eleve"], a["code_base"])] += a["montant"]
     factures = {l["eleve"] for l in lignes if l["eleve"]}
     controles = ctx.prefixes_controles()
     fr_r = regles.get("fratrie")
@@ -381,7 +385,7 @@ def regularisations_a_preparer(conn, regles: dict, date_effet: str | None = None
 
     # controle des lignes manuelles en attente : la ligne complete-t-elle bien ce qui manque ?
     for a in en_attente:
-        i, code = a["id_eleve"], a["code"]
+        i, code = a["id_eleve"], a["code_base"]
         if i not in ctx.el:
             a["controle"] = "eleve non actif ou ligne famille : non controle"
             continue
@@ -456,7 +460,7 @@ def suivi_echeanciers(conn, regles: dict, id_responsable: str | None = None, auj
         par_resp = {rid: par_resp[rid]}
     # payeurs factures par eleve (toutes validations) vs payeurs actuels
     payeurs_factures = defaultdict(set)
-    for l in _lignes(conn):
+    for l in _lignes(conn, regles):
         if l["eleve"] and l["total"]:
             payeurs_factures[l["eleve"]].add(l["responsable"])
     mode_prel = regles.get("echeances", {}).get("mode_prelevement", "Prélèvement")

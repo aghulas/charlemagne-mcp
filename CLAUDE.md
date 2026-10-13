@@ -153,6 +153,25 @@ facturation reelle, a garder en tete) :
 Tests : `tests/test_comparaison.py`, `tests/test_audit_facturation.py` (donnees synthetiques).
 Bout en bout : `scripts/smoke_test_audit.py` (vraie base, ne rien commiter de sa sortie).
 
+## Lignes de régularisation `…REGUL` (13/10/2026)
+Les lignes d'origine ne sont facturables qu'en septembre (`FAC_GRILLE_PERIODE`) ; Rémi a créé une ligne
+`XREGUL` par ligne `X` (même compte), et régularise par **avoir sur l'ancienne ligne + facture sur la
+nouvelle** (`ETUDE4JREGUL −650` + `ETUDE1JREGUL 225`). `tools/regles_facturation.code_de_base()` ramène
+`XREGUL` sur `X` (suffixe `regles["lignes_regularisation"]["suffixe"]`, `REGUL` par défaut, `''` pour
+désactiver) : l'audit, `regularisations_a_preparer` (couverture, lignes manuelles en attente) et
+`fiche_famille` (`compense`) cumulent sur la ligne d'origine, le code réel reste affiché
+(`ligne_de_regularisation.compense`). Sans cela, l'audit signalait chaque ligne REGUL comme incorrecte et
+les régularisations déjà validées étaient reproposées. Tests dans `test_audit_facturation.py` et
+`test_suivi_facturation.py`.
+**Audit d'une préparation complémentaire** (13/10/2026) : quand une facturation est déjà validée,
+`audit_de_facturation(validee=False)` juge la préparation sur le **cumul** FAC_HISTO + FAC_GESTION
+(`facturation: preparation_complementaire`, `resume.preparation_complementaire`) — avant, une préparation
+d'octobre à 22 lignes donnait 724 « lignes incorrectes » et 270 APEL. Seules les familles à montant non nul
+sont contrôlées côté échéances ; leur `GF_ORI_SOLDE` est le solde restant (pas une dette). Constaté sur
+la préparation calculée du 15/10 : Charlemagne y met **solde restant + complément sur une seule
+échéance** → alerte `nombre_echeances_prelevement` avec `attention` (réactualiser l'échéancier avant
+de valider, à vérifier à l'écran).
+
 ## Pièces à verser : suppression côté Charlemagne (constaté le 02/10/2026)
 Une pièce déposée par une famille (ou pour elle, via `ed_admin_deposer_piece`) et récupérée par
 Charlemagne est « verrouillée » dans EcoleDirecte : aucun écran ni endpoint EcoleDirecte ne permet de

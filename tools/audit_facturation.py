@@ -20,16 +20,18 @@ d'annee).
 Lecture seule. Aucune donnee bancaire n'est renvoyee.
 """
 
+import sqlite3
 from collections import Counter, defaultdict
 
 from tools.regles_facturation import (
     Contexte,
-    charger_regles,  # noqa: F401 - reexporte pour mcp_server
+    code_de_base,
     colonne,
     indice_mois,
     mois_restants,
     prorata_regles,
 )
+from tools.regles_facturation import charger_regles  # noqa: F401 - reexporte pour mcp_server
 from tools.regles_facturation import num as _num
 
 MAX_PAR_RUBRIQUE = 40
@@ -59,9 +61,31 @@ def audit_facturation(conn, regles: dict, validee: bool = False) -> dict:
     alerte = lambda rub, **d: A[rub].append(d)
     sel_val = colonne(conn, L, "IDVALIDATION", defaut="'1'")
     sel_lib = colonne(conn, L, f"{pl}LIBELLE_LIGNE")
-    GL = [(int(r[0] or 0), int(r[1] or 0), r[2], _num(r[3]), _num(r[4]), _num(r[5]), r[6], r[7], int(r[8] or 1), r[9])
-          for r in q(f"""SELECT IDELEVE, IDRESPONSABLE, {pl}CODE_LIGNE, {pl}TOTAL, {pl}REMISE_MT_FAMILLE, {pl}REMISE_MT_ELEVE,
-                                {pl}REMISE_CODE_FAMILLE, {pl}REMISE_CODE_ELEVE, {sel_val}, {sel_lib} FROM {L}""")]
+    # code de ligne ramene a sa ligne d'origine (ETUDE4JREGUL -> ETUDE4J) : les lignes de
+    # regularisation compensent la ligne initiale et se cumulent avec elle ; le code reel est garde
+    # pour la rubrique ligne_de_regularisation (10e element)
+    def lire_lignes(table, p, validation_fixe=None):
+        sv = colonne(conn, table, "IDVALIDATION", defaut="'1'") if validation_fixe is None else str(validation_fixe)
+        sl = colonne(conn, table, f"{p}LIBELLE_LIGNE")
+        return [(int(r[0] or 0), int(r[1] or 0), code_de_base(r[2], regles), _num(r[3]), _num(r[4]), _num(r[5]), r[6], r[7],
+                 int(r[8] or 1), r[9], r[2])
+                for r in q(f"""SELECT IDELEVE, IDRESPONSABLE, {p}CODE_LIGNE, {p}TOTAL, {p}REMISE_MT_FAMILLE, {p}REMISE_MT_ELEVE,
+                                      {p}REMISE_CODE_FAMILLE, {p}REMISE_CODE_ELEVE, {sv}, {sl} FROM {table}""")]
+    GL = lire_lignes(L, pl)
+    # Preparation complementaire (en cours d'annee) : la preparation ne contient que les lignes de
+    # regularisation de quelques familles ; on la juge sur le CUMUL facturation validee + preparation,
+    # sinon chaque ligne absente de la preparation serait signalee.
+    complementaire = False
+    def nb_lignes(table):
+        try:
+            return q(f"SELECT COUNT(*) FROM {table}")[0][0]
+        except sqlite3.OperationalError:  # table absente de l'export (ou fixture de test)
+            return 0
+    if not validee and nb_lignes("FAC_HISTO_LIGNE"):
+        complementaire = True
+        histo = lire_lignes("FAC_HISTO_LIGNE", "HL_")
+        v_prep = max((g[8] for g in histo), default=0) + 1
+        GL = histo + [(*g[:8], v_prep, *g[9:]) for g in GL]
     premiere_validation = min((g[8] for g in GL), default=1)
 
     # 1. perimetre et payeurs
@@ -87,10 +111,11 @@ def audit_facturation(conn, regles: dict, validee: bool = False) -> dict:
         if eid in el:
             tot[eid][code] += t
             part[(eid, code)][rid] += t
-    for eid, rid, code, t, rf, re_, cf, ce, v, lib in GL:
-        if v != premiere_validation and (t or rf or re_):
+    for eid, rid, code, t, rf, re_, cf, ce, v, lib, code_reel in GL:
+        if (v != premiere_validation or code_reel != code) and (t or rf or re_):
             alerte("ligne_de_regularisation", eleve=nm(eid) if eid else "(ligne famille)", responsable=rn.get(rid),
-                   validation=v, ligne=code, libelle=lib, montant=round(t, 2))
+                   validation="preparation" if complementaire and v == v_prep else v, ligne=code_reel,
+                   **({"compense": code} if code_reel != code else {}), libelle=lib, montant=round(t, 2))
     controles = ctx.prefixes_controles()
     contrib = defaultdict(Counter)
     for i in el:
@@ -170,23 +195,40 @@ def audit_facturation(conn, regles: dict, validee: bool = False) -> dict:
                 alerte("apel_incorrecte", responsable=rn.get(rid), foyer=ctx.foyer_apel.get(rid),
                        facture=round(apel.get(rid, 0), 2), attendu=att)
     ech_r = regles.get("echeances", {})
+    familles_prep = {}
     for rid, f in FAM.items():
+        if complementaire:
+            # preparation complementaire : seules les familles a montant non nul sont facturees ; leur
+            # ORI_SOLDE est le solde restant des factures precedentes (pas une dette)
+            montant = _num(f.get(f"{pf}APAYER_FACTURE"))
+            if not montant:
+                continue
+            familles_prep[rid] = montant
         n = sum(1 for k in range(1, 13) if _num(f.get(f"{pf}ECHE_PRIX{k}")))
         solde = _num(FAM1[rid].get(f"{pf}ORI_SOLDE"))
-        if solde > regles.get("solde_a_signaler", 100):
+        if not complementaire and solde > regles.get("solde_a_signaler", 100):
             alerte("solde_reporte_important", responsable=rn.get(rid), solde=solde)
         m, iban = ctx.mode.get(rid, (None, False))
         if m == ech_r.get("mode_prelevement", "Prélèvement"):
             idx = indice_mois(f.get(f"{pf}DATE_FACTURE"), regles)
             n_att = min(mois_restants(idx, regles) or ech_r.get("nb_prelevement", 0), ech_r.get("nb_prelevement", 99))
             if n_att and n != n_att:
-                alerte("nombre_echeances_prelevement", responsable=rn.get(rid), echeances=n, attendu=n_att,
-                       facture_du=f.get(f"{pf}DATE_FACTURE"))
+                d = {"responsable": rn.get(rid), "echeances": n, "attendu": n_att, "facture_du": f.get(f"{pf}DATE_FACTURE")}
+                if complementaire:
+                    d["montant_total_echeances"] = round(sum(_num(f.get(f"{pf}ECHE_PRIX{k}")) for k in range(1, 13)), 2)
+                    d["solde_repris"] = solde
+                    d["attention"] = "solde restant + complement sur une seule echeance : reactualiser l'echeancier avant de valider"
+                alerte("nombre_echeances_prelevement", **d)
             if not iban:
                 alerte("prelevement_sans_iban", responsable=rn.get(rid))
 
     # 5. validation : numerotation et equilibre comptable
     resume = {"eleves_actifs": len(el), "eleves_factures": len(factures & set(el)), "familles": len(FAM), "lignes": len(GL)}
+    if complementaire:
+        resume["preparation_complementaire"] = {
+            "familles_facturees": len(familles_prep), "montant_total": round(sum(familles_prep.values()), 2),
+            "lignes": sum(1 for g in GL if g[8] == v_prep and (g[3] or g[4] or g[5])),
+            "note": "jugee sur le cumul facturation validee + preparation"}
     if fr_r:
         resume["repartition_fratrie"] = {str(k): v for k, v in Counter(
             round(sum(x for c, x in tot[i].items() if c.startswith(fr_r["prefixe_lignes"])), 2) for i in el).items()}
@@ -195,7 +237,9 @@ def audit_facturation(conn, regles: dict, validee: bool = False) -> dict:
         if nums and nums != list(range(nums[0], nums[-1] + 1)):
             alerte("numerotation_discontinue", premier=nums[0], dernier=nums[-1], nombre=len(nums))
         d, c = q("SELECT SUM(CAST(CG_DEBIT AS REAL)), SUM(CAST(CG_CREDIT AS REAL)) FROM FAC_COMPTA_GENERAL")[0]
-        cf = q("SELECT SUM(CAST(CF_DEBIT AS REAL)) FROM FAC_COMPTA_FAMILLE")[0][0] or 0
+        # comptes clients : debit des factures moins credit des avoirs (un avoir manuel credite le client)
+        cfd, cfc = q("SELECT SUM(CAST(CF_DEBIT AS REAL)), SUM(CAST(CF_CREDIT AS REAL)) FROM FAC_COMPTA_FAMILLE")[0]
+        cf = (cfd or 0) - (cfc or 0)
         d, c = d or 0, c or 0
         resume["comptabilite"] = {"produits": round(c, 2), "reductions": round(d, 2), "clients": round(cf, 2),
                                   "equilibree": abs((c - d) - cf) <= .05}
@@ -205,7 +249,7 @@ def audit_facturation(conn, regles: dict, validee: bool = False) -> dict:
                   FROM FAC_VALIDATION ORDER BY CAST(IDVALIDATION AS INTEGER)""")
         resume["validations"] = [dict(zip(("id", "type", "nb_factures", "numero_debut", "numero_fin", "date"), v)) for v in vs]
     return {
-        "facturation": "validee" if validee else "preparation",
+        "facturation": "validee" if validee else ("preparation_complementaire" if complementaire else "preparation"),
         "resume": resume,
         "nb_anomalies": {k: len(v) for k, v in A.items()},
         "anomalies": {k: v[:MAX_PAR_RUBRIQUE] for k, v in A.items()},
