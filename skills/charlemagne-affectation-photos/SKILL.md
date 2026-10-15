@@ -1,31 +1,41 @@
 ---
 name: "charlemagne-affectation-photos"
-description: "Use when preparing a folder of student/staff photos for Charlemagne's automatic photo assignment (École Sainte Marie) via Administratif > Outils > Affectation des photos > Élèves – Adultes."
+description: "Préparer un dossier de photos élèves/adultes pour l'affectation automatique Charlemagne (École Sainte-Marie) et guider pas à pas la session RDP : dépôt en ZIP dans Downloads, RAZ, copie, affectation, contrôle, envoi et vérification EcoleDirecte."
 ---
 
-# Préparation des photos pour l'affectation automatique Charlemagne
+# Affectation des photos dans Charlemagne
 
-Cette skill prépare un dossier de photos (élèves et/ou adultes) reçu dans un nommage arbitraire (numérotation photographe, prénom seul, orthographe approximative...) pour qu'il soit directement utilisable par la fonction native Charlemagne d'affectation automatique des photos. La skill ne fait jamais l'affectation elle-même dans Charlemagne — elle livre un dossier renommé et un rapport, l'utilisateur lance ensuite le traitement natif.
+À utiliser quand l'utilisateur veut charger des photos d'élèves ou d'adultes dans Charlemagne (Administratif › Outils › Affectation des photos › Élèves – Adultes), qu'elles viennent de maclasse.photo (skill `maclasse-photos-eleves`, outil MCP `maclasse_preparer_photos`) ou d'un autre lot (clé du photographe, dossier en vrac). La skill prépare le dossier et accompagne l'utilisateur dans la session Charlemagne ; elle ne lance jamais elle-même l'affectation, la RAZ ni le transfert EcoleDirecte.
 
-## Contrat attendu par Charlemagne (documenté par Aplim, aide.aplim.mayday.cx)
+## Contrat Charlemagne (aide Aplim « AFFECTATION DES PHOTOS : Affecter les photos des élèves et des adultes », maj 16/09/2026, et « PHOTO : Comment affecter des photos sur EcoleDirecte ? », maj 09/09/2026 — copie locale `~/dev/charlemagne-tools/docs/aide-aplim/01-administratif/administratif-6.md` et `-4.md`)
 
-- Fichiers **.jpg uniquement**, idéalement ≤ 100 Ko, résolution conseillée 480x640.
-- Le nom de fichier (sans extension) doit être **soit** :
-  - `NOM Prénom` exactement comme sur la fiche Charlemagne (respect de la casse), **sans la particule** (ex. l'élève/adulte "DE LA TOUR Paul" → fichier `TOUR Paul.jpg`, jamais `DE LA TOUR Paul.jpg`) ;
-  - **soit** l'identifiant logiciel Charlemagne (IDELEVE pour un élève, IDPERSONNEL pour un adulte), ex. `672.jpg`.
-- Côté Charlemagne, le processus reste en deux temps, à rappeler à l'utilisateur mais jamais à faire soi-même : RAZ des photos (optionnel, casse juste le lien existant, ne supprime rien sur le serveur) puis Affectation automatique en pointant vers le dossier préparé. Les photos des élèves ne remontent pas automatiquement sur EcoleDirecte : un envoi manuel supplémentaire depuis Charlemagne Outils (case "À intégrer au prochain envoi") est nécessaire si l'utilisateur veut les y voir.
+- Fichiers **.jpg uniquement**, **≤ 100 Ko**, résolution conseillée 480×640 (400×533 convient). Pas de données d'orientation EXIF (photos à l'envers sinon) : livrer des JPEG réencodés sans métadonnées.
+- Nom de fichier : **`NOM Prénom`** exactement comme la fiche (casse respectée, **sans particule** : « DE LA TOUR Paul » → `TOUR Paul.jpg`) **ou** l'**identifiant logiciel** (IDELEVE élève, IDPERSONNEL adulte : `672.jpg`). Préférer l'identifiant : aucune ambiguïté d'homonyme, de particule ou d'accent ; joindre un CSV de contrôle (IDELEVE ; nom ; prénom ; classe ; fichier ; statut) pour la lecture humaine. L'identifiant Charlemagne est aussi l'`id` des comptes élèves EcoleDirecte.
+- Une photo mal nommée écrase la mauvaise fiche : jamais d'appariement deviné.
+- **Session RDP (Charlemagne Cloud)** : seul `~/Downloads` du Mac est visible, sous `\\tsclient\Downloads`. **Livrer un ZIP** (`photos_<lot>.zip`) dans `~/Downloads/charlemagne_auto/` en plus du dossier : constat du 15/10/2026, la copie fichier par fichier depuis `\\tsclient` est très lente et le bouton de copie Charlemagne pointé directement sur le dossier redirigé n'en finit pas (Charlemagne bloqué). Dans la session : copier le ZIP sur le disque local (Bureau ou `%LOCALAPPDATA%`), l'extraire là, puis pointer le bouton de copie sur ce dossier local. Photos seules dans le dossier (CSV de contrôle, LISEZMOI et exclus à côté, pas dedans). Rien ne s'installe côté serveur (skill `charlemagne-serveur-aplim`).
+- Après la copie et l'affectation, Charlemagne range les photos dans `T:\Photos\Eleves\FONTAINEBLEAU Ste Marie\<année>\` (ex. `2026-2027\`) et renseigne `COM_ELEVES.EL_PHOTO` avec le nom du fichier affecté (`<IDELEVE>.jpg` pour un lot nommé par identifiant) : l'export CSV suffit pour compter les fiches avec photo et lister les élèves présents qui n'en ont pas.
+- Les photos ne remontent pas seules sur EcoleDirecte : transfert manuel depuis Charlemagne Outils › EcoleDirecte (case « À intégrer au prochain envoi », flèche grise) ou Administratif › EcoleDirecte › Transfert vers EcoleDirecte ; si les espaces familles montrent encore d'anciennes photos, vider le cache du navigateur.
 
 ## Déroulé
 
-1. Demander à l'utilisateur : le dossier source des photos, s'il s'agit d'élèves et/ou d'adultes (enseignants/personnels), et quelle convention de nommage cible il préfère (nom, ou identifiant — l'identifiant évite toute ambiguïté d'homonymie mais est moins lisible pour une vérification humaine).
-2. Résoudre chaque photo vers le bon élève/adulte de façon fiable plutôt que par déduction :
-   - Élèves : utiliser l'outil MCP `liste_eleves` (IDELEVE, nom, prénom, classe) si le serveur MCP Charlemagne est disponible dans la session ; sinon interroger directement `COM_ELEVES` dans la base SQLite consolidée si elle est accessible.
-   - Adultes : même logique avec l'outil MCP `liste_personnels` (IDPERSONNEL, nom, prénom, particule) ou la table `COM_PERSONNELS`.
-   - Ne jamais deviner un appariement incertain (nom approchant, homonymes, plusieurs candidats) : lister ces cas séparément dans le rapport final pour arbitrage par l'utilisateur, plutôt que de choisir à sa place — une photo mal affectée écrase la mauvaise fiche.
-3. Renommer les fichiers dans une copie du dossier (jamais en écrasant les originaux sans un dossier de sortie séparé, sauf si l'utilisateur le demande explicitement), en respectant le format choisi à l'étape 1 (nom sans particule, ou identifiant).
-4. Signaler dans le rapport : fichiers non-.jpg ou hors gabarit de poids/résolution recommandé, photos sans correspondance trouvée, correspondances ambiguës (plusieurs élèves/adultes possibles), et élèves/adultes de la liste qui n'ont pas de photo dans le lot fourni.
-5. Rappeler explicitement à l'utilisateur les étapes Charlemagne natives à faire ensuite (RAZ optionnelle, puis Affectation automatique sur le dossier livré, puis envoi manuel vers EcoleDirecte si besoin) — cette skill ne les déclenche jamais elle-même.
+1. **Source et cible** : demander le dossier source, élèves et/ou adultes, et confirmer la convention (identifiant par défaut). Lot maclasse.photo : partir de `charlemagne_ideleve/` produit par `maclasse_preparer_photos` (déjà nommé par IDELEVE, optimisé, silhouettes écartées) ; lot arbitraire : rapprocher chaque photo via l'outil MCP Charlemagne `liste_eleves` (IDELEVE, nom, prénom, classe) ou `liste_personnels` (IDPERSONNEL, particule), sinon `COM_ELEVES` / `COM_PERSONNELS` de la base consolidée ; cas ambigus listés pour arbitrage, jamais tranchés seul.
+2. **Contrôle du lot** (shell du Mac, ImageMagick ou Pillow) : extension .jpg, poids ≤ 100 Ko (réencoder `-strip -quality 92→60` sinon), pas d'EXIF, **silhouettes/pictogrammes « pas de photo »** (image à quelques dizaines de couleurs) à écarter dans un dossier `_exclus`, doublons d'identifiant. Compter : fichiers livrés = élèves appariés − exclus.
+3. **Dépôt** : copier le dossier dans `~/Downloads/charlemagne_auto/photos_<lot>/` et le zipper en `photos_<lot>.zip` (accès au dossier Downloads demandé à l'utilisateur), écrire à côté `photos_<lot>_controle.csv` et `photos_<lot>_LISEZMOI.txt` (ASCII, étapes ci-dessous). Vérifier avec `COM_ELEVES.EL_PHOTO` de la base consolidée combien de fiches ont déjà une photo (vide = aucune).
+4. **Guider la session Charlemagne**, étape par étape, en attendant le retour de l'utilisateur à chaque écran :
+   1. Copier `\\tsclient\Downloads\charlemagne_auto\photos_<lot>.zip` sur le disque local de la session et l'extraire.
+   2. Administratif › Outils › Affectation des photos › Élèves – Adultes.
+   3. RAZ des photos (facultatif ; utile avant un nouveau millésime ou s'il existe des homonymes) : ne supprime rien sur le serveur, casse seulement le lien photo ↔ fiche.
+   4. Bouton de copie des photos → dossier local extrait → « Sélectionner un dossier » → Oui → OK (copie dans le répertoire photos de la base).
+   5. Affectation automatique.
+   6. Contrôle : ouvrir 2 ou 3 fiches (dont un élève à particule et un homonyme s'il y en a), photo à l'endroit, bon enfant ; relancer un export CSV (`export_charlemagne.cmd` ou `tout_en_un.cmd`) puis `comparer_exports` (MCP Charlemagne : autant de fiches `EL_PHOTO` modifiées que de photos livrées) et lister les élèves **présents** (sans date de sortie, avec classe) dont `EL_PHOTO` reste vide : absents à la prise de vue, arrivées récentes, silhouettes écartées.
+   7. EcoleDirecte : Charlemagne Outils › EcoleDirecte → bonne année scolaire → cocher « À intégrer au prochain envoi » → flèche grise. Éviter 19h00–19h30 (synchro Aplim).
+5. **Vérifier dans EcoleDirecte** (connecteurs MCP) : d'abord `journal_transferts_ecoledirecte` (MCP Charlemagne) — le transfert qui suit l'affectation doit porter « N photos envoyées - \\ECO-BD05\0771268K$\Photos\Eleves\… » avec N = photos affectées ; les transferts suivants affichent « Sans - Dernier envoi le JJ/MM/AAAA » (normal : les photos ne repartent que si elles changent). Ensuite `ed_admin_synchros_etat` (les six modules à l'heure du transfert, « déroulée correctement ») ; puis `ed_perso_classe_eleves(id_classe, include_sensitive_fields=True)` du compte secrétariat sur 2 ou 3 classes : le champ `photo` doit être une URL `//doc1.ecoledirecte.com/PhotoEleves/…` pour chaque élève livré et vide pour les exclus/absents (le champ `photo` de `ed_admin_eleves_search` reste vide : pas probant). Les URL ne sont pas lisibles sans session (404 en direct) ; le contrôle visuel se fait sur un espace famille ou enseignant, cache vidé si besoin.
+6. **Rapport** : livrés / exclus / sans photo / à arbitrer, résultat de la vérification EcoleDirecte, et ce qui reste à faire (adultes, absents à photographier, demande de photo de classe au photographe).
+
+## Constat du 15/10/2026 (lot maclasse.photo 2026-2027)
+
+Affectation par identifiant : 396 fiches `EL_PHOTO` renseignées, transfert manuel de 14h33 « 396 photos envoyées », transfert automatique suivant « Sans - Dernier envoi le 15/10/2026 ». Restaient 5 élèves présents sans photo (absents à la prise de vue ou arrivés après) : les chercher sur maclasse.photo (skill `maclasse-photos-eleves`) avant de conclure. La sauvegarde du partage qui a suivi a compté 209 fichiers disparus côté serveur : ce n'étaient pas des photos mais les fichiers temporaires de réplication EcoleDirecte (voir skill `charlemagne-serveur-aplim`) ; la RAZ ne supprime aucune photo du serveur.
 
 ## Vigilance données
 
-Ces photos identifient nominativement des élèves mineurs et des adultes. Même discipline que le reste du projet Charlemagne : pas de photos ni de noms réels dans des exemples ou du code versionné, dossier livré uniquement à l'utilisateur qui en a fait la demande.
+Photos nominatives d'élèves mineurs et d'adultes : pas de photos ni de noms réels dans des exemples ou du code versionné, dossier livré uniquement à l'utilisateur. Les métadonnées (EXIF, GPS) sont retirées avant dépôt. Aucune action dans Charlemagne n'est déclenchée par Claude.
