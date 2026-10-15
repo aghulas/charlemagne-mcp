@@ -65,3 +65,17 @@ def test_sans_chemin(monkeypatch):
     monkeypatch.delenv("CHARLEMAGNE_JOURNAL_ED", raising=False)
     with pytest.raises(ValueError):
         je.journal_transferts()
+
+
+def test_fraicheur_lue_dans_le_contenu(tmp_path, monkeypatch):
+    """La date de modification de la copie n'est pas fiable : la fraicheur vient du dernier
+    transfert journalise, meme quand un filtre de dates l'exclut du resultat."""
+    import os
+    f = tmp_path / "journal.txt"
+    f.write_bytes(JOURNAL.encode("cp1252"))
+    os.utime(f, (0, 0))  # date de copie aberrante (1970)
+    monkeypatch.setenv("CHARLEMAGNE_JOURNAL_ED", str(f))
+    r = je.journal_transferts(jusqu_a="2026-09-30")
+    assert r["dernier_transfert_journalise"] == "2026-10-02 15:35:29"
+    assert r["date_copie_fichier_indicative"].startswith("1970")
+    assert "fichier_mis_a_jour_le" not in r

@@ -147,9 +147,15 @@ def journal_transferts(depuis: str | None = None, jusqu_a: str | None = None,
          "mode": t["mode"], "poste": t["poste"]}
         for t in res if isinstance(t["documents_pdf_envoyes"], int) and t["documents_pdf_envoyes"] > 0
     ]
-    maj = datetime.fromtimestamp(p.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
+    # La date de modification de la copie locale n'est pas fiable (copie via le
+    # dossier redirige / OneDrive : decalage d'une heure constate le 15/10/2026,
+    # dates en 2076 sur les fichiers ecrits depuis la session RDP). La fraicheur se
+    # lit dans le contenu : debut du dernier transfert journalise.
+    dernier = max((t["debut"] for t in tous), default=None)
+    copie = datetime.fromtimestamp(p.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
     return {
-        "fichier_mis_a_jour_le": maj,
+        "dernier_transfert_journalise": dernier,
+        "date_copie_fichier_indicative": copie,
         "nb_transferts": len(res),
         "nb_en_erreur": sum(1 for t in res if t["statut"] != "ok"),
         "publications_documents": publications,
@@ -157,6 +163,6 @@ def journal_transferts(depuis: str | None = None, jusqu_a: str | None = None,
         "note": ("Une ligne 'documents_pdf_envoyes' > 0 = des PDF (circulaires, factures, documents "
                  "a signer) ont ete publies dans l'espace Documents d'EcoleDirecte, SANS notification "
                  "aux familles. Le journal ne donne ni intitule ni destinataires : les lire dans "
-                 "EcoleDirecte (ed_admin_documents_ecole). Fichier copie depuis le serveur : a jour "
-                 "a la date indiquee."),
+                 "EcoleDirecte (ed_admin_documents_ecole). Fichier copie depuis le serveur : il est a "
+                 "jour du dernier transfert journalise (la date de copie du fichier est indicative)."),
     }
