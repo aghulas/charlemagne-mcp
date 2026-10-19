@@ -37,6 +37,7 @@
     "cumul_avec_personnel": false
   },
   "codes_personnel": ["CODE_QUOTIENT2_PERSONNEL"],
+  "remise_personnel": {"ligne_regul": "CODE_LIGNE_REPRISE_REMISE"},
   "remises_eleve_autorisees": [],
   "apel": {
     "ligne": "APEL",

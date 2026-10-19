@@ -343,13 +343,52 @@ def regularisations_a_preparer(conn, regles: dict, date_effet: str | None = None
                                                  "libelle": f"{lib_lignes.get(ap_r['ligne'], 'APEL')} - "
                                                             f"{'complement' if delta > 0 else 'avoir'} (justificatif / situation du foyer)"}})
 
+    # remise personnel : cumul des remises famille facturees (toutes validations), moins ce qui a deja
+    # ete repris sur la ligne de reprise (regles remise_personnel.ligne_regul, ex. REMPERSREGUL)
+    rp_r = regles.get("remise_personnel") or {}
+    ligne_rp = rp_r.get("ligne_regul")
+    # code reel seulement : la ligne de reprise peut etre une ligne ...REGUL dont le code de base
+    # (ex. CONTRIBREGUL -> CONTRIB) est celui de toutes les contributions
+    remises, reprises = defaultdict(float), defaultdict(float)
+    for l in lignes:
+        if not l["eleve"]:
+            continue
+        remises[l["eleve"]] += l["remise_famille"]
+        if ligne_rp and l.get("code_reel") == ligne_rp:
+            reprises[l["eleve"]] += l["total"]
+
     # remise personnel absente (montant non chiffre : remise famille parametree dans Charlemagne)
     remise_absente = []
-    if id_eleve in (None, ""):
-        avec_remise = {l["eleve"] for l in lignes if l["remise_famille"]}
-        for i in sorted(ctx.el):
-            if ctx.est_perso(i) and i not in avec_remise and i in factures:
-                remise_absente.append({"eleve": ctx.nom(i), "quotient2": [ctx.q2.get(r) for r in ctx.pay[i]]})
+    for i in cibles:
+        if ctx.sortie(i) or i not in factures:
+            continue
+        if ctx.est_perso(i) and round(remises.get(i, 0) - reprises.get(i, 0), 2) <= .01:
+            remise_absente.append({"eleve": ctx.nom(i), "quotient2": [ctx.q2.get(r) for r in ctx.pay[i]]})
+
+    # remise personnel retiree : remise facturee alors qu'aucun payeur n'a plus de quotient personnel
+    # (quotient 2 enleve apres la facturation, faute d'attestation par exemple) -> reprise a facturer
+    remise_retiree = []
+    for i in cibles:
+        if ctx.sortie(i) or ctx.est_perso(i):
+            continue
+        net = round(remises.get(i, 0) - reprises.get(i, 0), 2)
+        if net <= .01:
+            continue
+        prorata = round(net * restants / nb, 2)
+        saisi = net if mode_saisie == "plein" else prorata
+        quote = {ctx.rn.get(r, str(r)): round(saisi * p / 100, 2) for r, p in ctx.pay[i].items()} if ctx.pay[i] else {}
+        remise_retiree.append({
+            "id_eleve": i, "eleve": ctx.nom(i), "classe": ctx.classe(i),
+            "quotient2_actuel": [ctx.q2.get(r) for r in ctx.pay[i]],
+            "remise_facturee": round(remises.get(i, 0), 2), "deja_reprise": round(reprises.get(i, 0), 2),
+            "montant_plein": net, "montant_prorata": prorata,
+            "periode": f"{libelle_mois(m0, regles)} -> {libelle_mois(nb, regles)} ({restants}/{nb})",
+            "saisie_proposee": {"ligne": ligne_rp or "(ligne de reprise a creer : regles remise_personnel.ligne_regul)",
+                                "quantite": 1, "prix": saisi,
+                                "libelle": "Regularisation remise personnel (quotient retire)"},
+            "quote_part_payeurs": quote,
+            "note": "Reprise de la remise personnel accordee sur la facture : decision de la direction "
+                    "(montant plein ou prorata) ; prenotification SEPA si l'echeancier change."})
 
     # justificatifs : piece recue mais information non saisie, et l'inverse
     a_saisir, sans_piece = [], []
@@ -416,12 +455,14 @@ def regularisations_a_preparer(conn, regles: dict, date_effet: str | None = None
         "resume": {"eleves_controles": len(cibles), "eleves_a_regulariser": len(regularisations),
                    "nouveaux_eleves": sum(1 for x in regularisations if x["nouvel_eleve"]),
                    "departs": len(departs), "complements_prorata": round(total_c, 2), "avoirs_prorata": round(total_a, 2),
-                   "apel_a_regulariser": len(apel), "lignes_manuelles_en_attente": len(en_attente),
+                   "apel_a_regulariser": len(apel), "remises_personnel_retirees": len(remise_retiree),
+                   "lignes_manuelles_en_attente": len(en_attente),
                    "justificatifs_a_saisir": len(a_saisir)},
         "regularisations": regularisations[:MAX_ELEMENTS],
         "departs": departs[:MAX_ELEMENTS],
         "apel": apel[:MAX_ELEMENTS],
         "remise_personnel_absente": remise_absente[:MAX_ELEMENTS],
+        "remise_personnel_retiree": remise_retiree[:MAX_ELEMENTS],
         "lignes_manuelles_en_attente": en_attente,
         "a_saisir_avant_de_facturer": a_saisir[:MAX_ELEMENTS],
         "information_saisie_sans_piece": sans_piece[:MAX_ELEMENTS],

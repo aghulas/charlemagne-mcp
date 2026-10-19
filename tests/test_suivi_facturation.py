@@ -294,3 +294,40 @@ def test_lignes_regul_compensent_la_ligne_d_origine(conn):
     r = regularisations_a_preparer(conn, REGLES, aujourd_hui=AUJ)
     e = next(x for x in r["regularisations"] if x["id_eleve"] == 5)
     assert {l["code"]: l["montant_plein"] for l in e["lignes"]} == {"ET4J": -40, "ET1J": 10}
+
+
+def _remise_d(conn, quotient: str):
+    """D (4) facture en septembre avec une remise personnel de 300 sur CONTRIB ; quotient 2 de RD = `quotient`."""
+    conn.execute("UPDATE FAC_HISTO_LIGNE SET HL_TOTAL = '700', HL_REMISE_MT_FAMILLE = '300' "
+                 "WHERE IDELEVE = '4' AND HL_CODE_LIGNE = 'CONTRIB'")
+    conn.execute("UPDATE COM_RESPONSABLES SET RE_QUOTIENT2 = ? WHERE IDRESPONSABLE = '40'", (quotient,))
+
+
+def test_remise_personnel_retiree(conn):
+    _remise_d(conn, "")
+    r = regularisations_a_preparer(conn, REGLES, date_effet="2026-10-20", aujourd_hui=AUJ)
+    assert r["resume"]["remises_personnel_retirees"] == 1
+    x = r["remise_personnel_retiree"][0]
+    assert x["id_eleve"] == 4 and x["remise_facturee"] == 300 and x["montant_plein"] == 300
+    assert x["montant_prorata"] == 270  # octobre -> juin, 9/10
+    assert x["saisie_proposee"]["quantite"] == 1 and x["saisie_proposee"]["prix"] == 270
+    assert x["saisie_proposee"]["ligne"].startswith("(ligne de reprise")
+    # avec un seul eleve
+    r1 = regularisations_a_preparer(conn, REGLES, date_effet="2026-10-20", id_eleve="4", aujourd_hui=AUJ)
+    assert len(r1["remise_personnel_retiree"]) == 1
+
+
+def test_remise_personnel_toujours_due_ou_deja_reprise(conn):
+    # quotient personnel toujours present : rien a reprendre
+    _remise_d(conn, "PERSO")
+    r = regularisations_a_preparer(conn, REGLES, date_effet="2026-10-20", aujourd_hui=AUJ)
+    assert r["remise_personnel_retiree"] == [] and r["remise_personnel_absente"] == []
+    # quotient retire puis remise reprise sur la ligne de reprise : plus rien a proposer
+    regles = {**REGLES, "remise_personnel": {"ligne_regul": "CONTRIBREGUL"}}
+    conn.execute("UPDATE COM_RESPONSABLES SET RE_QUOTIENT2 = '' WHERE IDRESPONSABLE = '40'")
+    r = regularisations_a_preparer(conn, regles, date_effet="2026-10-20", aujourd_hui=AUJ)
+    assert r["remise_personnel_retiree"][0]["saisie_proposee"]["ligne"] == "CONTRIBREGUL"
+    conn.execute("INSERT INTO FAC_HISTO_LIGNE VALUES ('2', '4', '40', 'CONTRIBREGUL', '300', '1', '300', "
+                 "'Regularisation remise personnel', '0', '0', '0')")
+    r = regularisations_a_preparer(conn, regles, date_effet="2026-10-20", aujourd_hui=AUJ)
+    assert r["remise_personnel_retiree"] == []
