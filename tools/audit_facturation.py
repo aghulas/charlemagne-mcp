@@ -111,6 +111,15 @@ def audit_facturation(conn, regles: dict, validee: bool = False) -> dict:
         if eid in el:
             tot[eid][code] += t
             part[(eid, code)][rid] += t
+    # remise personnel reprise apres facturation (quotient retire) : ligne de reprise reconnue par son
+    # code reel (regles remise_personnel.ligne_regul, ex. CONTRIBREGUL, qui se ramene a CONTRIB).
+    # Elle compense la remise, pas la contribution : ni ecart de contribution, ni remise sans code.
+    ligne_rp = (regles.get("remise_personnel") or {}).get("ligne_regul")
+    remises_f, reprises_rp = defaultdict(float), defaultdict(float)
+    for eid, rid, code, t, rf, *_r in GL:
+        remises_f[eid] += rf
+        if ligne_rp and _r[-1] == ligne_rp:
+            reprises_rp[eid] += t
     for eid, rid, code, t, rf, re_, cf, ce, v, lib, code_reel in GL:
         if (v != premiere_validation or code_reel != code) and (t or rf or re_):
             alerte("ligne_de_regularisation", eleve=nm(eid) if eid else "(ligne famille)", responsable=rn.get(rid),
@@ -134,7 +143,7 @@ def audit_facturation(conn, regles: dict, validee: bool = False) -> dict:
                     alerte("ligne_incorrecte", eleve=nm(i), ligne=code, facture=round(f, 2), attendu=a)
         rg = regles.get("lignes_regroupement_contribution", [])
         if rg:
-            contrib[ctx.classe(i)][round(sum(v for c, v in g.items() if c in rg), 2)] += 1
+            contrib[ctx.classe(i)][round(sum(v for c, v in g.items() if c in rg) - reprises_rp.get(i, 0), 2)] += 1
     for cl, c in contrib.items():
         if len(c) > 1:
             alerte("contribution_differente_dans_une_classe", classe=cl, montants=dict(c))
@@ -167,7 +176,8 @@ def audit_facturation(conn, regles: dict, validee: bool = False) -> dict:
                                facture=round(parts.get(rid, 0), 2), attendu=round(attendu * pct / 100, 2))
     rem_eleve_ok = set(regles.get("remises_eleve_autorisees", []))
     for eid, rid, code, t, rf, re_, cf, ce, *_ in GL:
-        if rf and cf and eid in el and not ctx.est_perso(eid):
+        if (rf and cf and eid in el and not ctx.est_perso(eid)
+                and remises_f[eid] - reprises_rp.get(eid, 0) > .01):  # remise deja reprise : rien a signaler
             alerte("remise_famille_sans_code_personnel", eleve=nm(eid), remise=cf)
         if re_ and ce not in rem_eleve_ok:
             alerte("remise_eleve_inattendue", eleve=nm(eid), ligne=code, remise=ce, montant=re_)

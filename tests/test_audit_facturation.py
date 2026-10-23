@@ -248,3 +248,24 @@ def test_extra_dont_le_code_commence_comme_un_forfait(conn):
     assert not any(x["ligne"] == "GMOCC" for x in a["ligne_incorrecte"])
     # le controle du vrai forfait reste en place (Bob : FMS juste, CANT3J faux)
     assert any(x["ligne"] == "CANT3J" for x in a["ligne_incorrecte"])
+
+
+def test_remise_personnel_reprise_ni_ecart_de_contribution_ni_remise_sans_code(conn):
+    # constat du 24/10/2026 : remise personnel facturee (quotient retire ensuite) puis reprise sur
+    # CONTRIBREGUL ; la contribution nette est celle de la classe et la remise ne doit plus etre signalee
+    conn.execute("UPDATE FAC_GESTION_LIGNE SET GL_REMISE_MT_FAMILLE = '300', GL_REMISE_CODE_FAMILLE = 'REMPERS' "
+                 "WHERE IDELEVE = '3' AND GL_CODE_LIGNE = 'CONTRIB'")
+    conn.execute("INSERT INTO FAC_GESTION_LIGNE VALUES ('1', '10', 'CONTRIB', '1000', '0', '0', '', ''), "
+                 "('2', '10', 'CONTRIB', '1000', '0', '0', '', '')")
+    regles = dict(REGLES, lignes_regroupement_contribution=["CONTRIB"])
+    a = audit_facturation(conn, regles)["anomalies"]
+    assert [x["remise"] for x in a["remise_famille_sans_code_personnel"]] == ["REMPERS"]
+    assert "contribution_differente_dans_une_classe" not in a
+    conn.execute("INSERT INTO FAC_GESTION_LIGNE VALUES ('3', '21', 'CONTRIBREGUL', '300', '0', '0', '', '')")
+    # sans ligne de reprise declaree : la reprise compte comme de la contribution (1300 contre 1000)
+    a = audit_facturation(conn, regles)["anomalies"]
+    assert a["contribution_differente_dans_une_classe"][0]["montants"] == {1300.0: 1, 1000.0: 3}
+    regles["remise_personnel"] = {"ligne_regul": "CONTRIBREGUL"}
+    a = audit_facturation(conn, regles)["anomalies"]
+    assert "contribution_differente_dans_une_classe" not in a
+    assert "remise_famille_sans_code_personnel" not in a
