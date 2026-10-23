@@ -241,6 +241,11 @@ def register_tools(server: MCPServer) -> None:
             "regularisation et les lignes au prorata sont signalees en information ; une preparation "
             "complementaire (quelques familles, lignes ...REGUL) est jugee sur le cumul facturation "
             "validee + preparation, avec un controle de l'echeancier de chaque famille facturee. "
+            "Cycle des extras (preparation, ou derniere validation, dont toutes les lignes sont des "
+            "lignes d'occasionnels / retards / frais : regles facturation_extras.lignes) : alerte "
+            "extras_en_reprise_du_solde si le solde est repris (l'echeancier de la famille est remplace, "
+            "souvent par une seule echeance) - l'option attendue est « Sans solde : avec echeancier "
+            "existant » ; resume.cycle_extras. "
             "A lancer apres chaque nouvelle preparation, avant de valider. N'expose aucune donnee bancaire."
         )
     )

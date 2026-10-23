@@ -48,6 +48,8 @@
     "info_foyer_separe": "Foyer S"
   },
   "echeances": {"mode_prelevement": "Prélèvement", "nb_prelevement": 10},
+  "facturation_extras": {"lignes": ["CANTOCC", "GARDMATINOCC", "GARDETUDOCC", "RETARDGARDETUD", "FRSIMP"],
+                         "option_attendue": "Sans solde : avec echeancier existant"},
   "solde_a_signaler": 100,
   "prorata": {"premier_mois": 9, "nb_mois": 10},
   "pieces_justificatifs": [

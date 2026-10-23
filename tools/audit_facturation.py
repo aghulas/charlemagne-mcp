@@ -196,7 +196,48 @@ def audit_facturation(conn, regles: dict, validee: bool = False) -> dict:
                        facture=round(apel.get(rid, 0), 2), attendu=att)
     ech_r = regles.get("echeances", {})
     familles_prep = {}
+    # Cycle des extras (occasionnels du mois, retards, frais de rejet) : la facture doit s'ajouter a
+    # l'echeance suivante sans toucher aux autres (option « Sans solde : avec echeancier existant »).
+    # Incident du 23/10/2026 (validation 7, 90 factures) : preparee en « Reprise du solde » sans dates,
+    # elle a remplace l'echeancier de 86 familles en prelevement par UNE echeance (solde restant +
+    # extras, 287 995,68 EUR au 27/10). Controle : preparation (ou derniere validation) dont toutes les
+    # lignes non nulles sont des lignes d'extras, et solde repris sur les factures.
+    x_r = regles.get("facturation_extras", {})
+    codes_extras = set(x_r.get("lignes", ["CANTOCC", "GARDMATINOCC", "GARDETUDOCC", "RETARDGARDETUD", "FRSIMP"]))
+    if complementaire:
+        v_cible = v_prep
+    elif validee:
+        v_cible = max((g[8] for g in GL), default=0)
+    else:
+        v_cible = None
+    lignes_cible = [g for g in GL if v_cible is not None and g[8] == v_cible and (g[3] or g[4] or g[5])]
+    cycle_extras = (bool(lignes_cible) and all(g[10] in codes_extras for g in lignes_cible)
+                    and (complementaire or (validee and v_cible > premiere_validation)))
+    col_solde_pris = f"{pf}SOLDE_PRIS" in fcols
+    extras_repris = []
     for rid, f in FAM.items():
+        concerne = False
+        if cycle_extras:
+            montant_x = _num(f.get(f"{pf}APAYER_FACTURE"))
+            concerne = (bool(montant_x) if complementaire
+                        else str(f.get("IDVALIDATION")) == str(v_cible) and bool(montant_x))
+            if concerne:
+                ori = _num(f.get(f"{pf}ORI_SOLDE"))
+                repris = (_num(f.get(f"{pf}SOLDE_PRIS")) == 1 and bool(ori)) if col_solde_pris else bool(ori)
+                if repris:
+                    n_x = sum(1 for k in range(1, 13) if _num(f.get(f"{pf}ECHE_PRIX{k}")))
+                    extras_repris.append(rid)
+                    alerte("extras_en_reprise_du_solde", responsable=rn.get(rid), extras=round(montant_x, 2),
+                           solde_repris=round(ori, 2), echeances=n_x,
+                           total_echeances=round(sum(_num(f.get(f"{pf}ECHE_PRIX{k}")) for k in range(1, 13)), 2),
+                           attention=("facturation des extras en « Reprise du solde » : l'echeancier de la famille "
+                                      "est remplace" + (" (une seule echeance)" if n_x <= 1 else "")
+                                      + (". Avant validation : effacer le calcul et choisir « Sans solde : avec "
+                                         "echeancier existant »." if not validee else
+                                         ". Validee : reajuster l'echeancier en comptabilite (Outils › Reajustement "
+                                         "des echeanciers) AVANT la remise en banque.")))
+                # dans les deux cas, le nombre d'echeances n'est pas a controler ici : extras sur
+                # l'echeancier existant (une seule echeance, la suivante, est normale) ou deja signale
         if complementaire:
             # preparation complementaire : seules les familles a montant non nul sont facturees ; leur
             # ORI_SOLDE est le solde restant des factures precedentes (pas une dette)
@@ -212,7 +253,7 @@ def audit_facturation(conn, regles: dict, validee: bool = False) -> dict:
         if m == ech_r.get("mode_prelevement", "Prélèvement"):
             idx = indice_mois(f.get(f"{pf}DATE_FACTURE"), regles)
             n_att = min(mois_restants(idx, regles) or ech_r.get("nb_prelevement", 0), ech_r.get("nb_prelevement", 99))
-            if n_att and n != n_att:
+            if n_att and n != n_att and not concerne:
                 d = {"responsable": rn.get(rid), "echeances": n, "attendu": n_att, "facture_du": f.get(f"{pf}DATE_FACTURE")}
                 if complementaire:
                     d["montant_total_echeances"] = round(sum(_num(f.get(f"{pf}ECHE_PRIX{k}")) for k in range(1, 13)), 2)
@@ -229,6 +270,11 @@ def audit_facturation(conn, regles: dict, validee: bool = False) -> dict:
             "familles_facturees": len(familles_prep), "montant_total": round(sum(familles_prep.values()), 2),
             "lignes": sum(1 for g in GL if g[8] == v_prep and (g[3] or g[4] or g[5])),
             "note": "jugee sur le cumul facturation validee + preparation"}
+    if cycle_extras:
+        resume["cycle_extras"] = {
+            "validation": v_cible if validee else "preparation", "lignes": sorted({g[10] for g in lignes_cible}),
+            "familles_en_reprise_du_solde": len(extras_repris),
+            "option_attendue": "Sans solde : avec echeancier existant"}
     if fr_r:
         resume["repartition_fratrie"] = {str(k): v for k, v in Counter(
             round(sum(x for c, x in tot[i].items() if c.startswith(fr_r["prefixe_lignes"])), 2) for i in el).items()}

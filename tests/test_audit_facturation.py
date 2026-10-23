@@ -186,3 +186,53 @@ def test_preparation_complementaire_jugee_sur_le_cumul(conn):
     e = a["nombre_echeances_prelevement"]
     assert len(e) == 1 and e[0]["echeances"] == 1 and e[0]["attendu"] == 9 and e[0]["montant_total_echeances"] == 1000
     assert "reactualiser" in e[0]["attention"]
+
+
+def _preparation_extras(conn, solde_pris: str, ori: str, eche10: str):
+    """Facturation initiale validee ; preparation des extras du mois (cantine occasionnelle) pour DURAND."""
+    conn.executescript(f"""
+        CREATE TABLE FAC_HISTO_LIGNE AS SELECT 1 AS IDVALIDATION, IDELEVE, IDRESPONSABLE, GL_CODE_LIGNE AS HL_CODE_LIGNE,
+            GL_TOTAL AS HL_TOTAL, GL_REMISE_MT_FAMILLE AS HL_REMISE_MT_FAMILLE, GL_REMISE_MT_ELEVE AS HL_REMISE_MT_ELEVE,
+            GL_REMISE_CODE_FAMILLE AS HL_REMISE_CODE_FAMILLE, GL_REMISE_CODE_ELEVE AS HL_REMISE_CODE_ELEVE FROM FAC_GESTION_LIGNE;
+        DELETE FROM FAC_GESTION_LIGNE;
+        INSERT INTO FAC_GESTION_LIGNE VALUES ('1', '10', 'CANTOCC', '15.2', '0', '0', '', '');
+        ALTER TABLE FAC_GESTION_FAMILLE ADD COLUMN GF_APAYER_FACTURE TEXT;
+        ALTER TABLE FAC_GESTION_FAMILLE ADD COLUMN GF_DATE_FACTURE TEXT;
+        ALTER TABLE FAC_GESTION_FAMILLE ADD COLUMN GF_SOLDE_PRIS TEXT;
+        UPDATE FAC_GESTION_FAMILLE SET GF_APAYER_FACTURE = '15.2', GF_DATE_FACTURE = '20261023', GF_ORI_SOLDE = '{ori}',
+            GF_SOLDE_PRIS = '{solde_pris}', GF_ECHE_PRIX1 = '0', GF_ECHE_PRIX2 = '0', GF_ECHE_PRIX3 = '0', GF_ECHE_PRIX4 = '0',
+            GF_ECHE_PRIX5 = '0', GF_ECHE_PRIX6 = '0', GF_ECHE_PRIX9 = '0', GF_ECHE_PRIX10 = '{eche10}', GF_ECHE_PRIX11 = '0',
+            GF_ECHE_PRIX12 = '0' WHERE IDRESPONSABLE = '10';
+        UPDATE FAC_GESTION_FAMILLE SET GF_APAYER_FACTURE = '0' WHERE IDRESPONSABLE = '21';
+    """)
+
+
+def test_extras_en_reprise_du_solde_signales(conn):
+    # incident du 23/10/2026 : extras factures en « Reprise du solde » -> solde restant + extras sur une echeance
+    _preparation_extras(conn, solde_pris="1", ori="900", eche10="915.2")
+    regles = dict(REGLES, facturation_extras={"lignes": ["CANTOCC", "GARDMATINOCC", "GARDETUDOCC"]})
+    r = audit_facturation(conn, regles)
+    x = r["anomalies"]["extras_en_reprise_du_solde"]
+    assert len(x) == 1 and x[0]["responsable"] == "DURAND Jean" and x[0]["echeances"] == 1
+    assert x[0]["solde_repris"] == 900 and "Sans solde : avec echeancier existant" in x[0]["attention"]
+    assert r["resume"]["cycle_extras"]["familles_en_reprise_du_solde"] == 1
+    # deja signale : pas de doublon dans nombre_echeances_prelevement
+    assert "nombre_echeances_prelevement" not in r["anomalies"]
+
+
+def test_extras_sur_echeancier_existant_sans_alerte(conn):
+    # bonne option : pas de solde repris, la facture s'ajoute a l'echeance suivante (une seule echeance, normale)
+    _preparation_extras(conn, solde_pris="0", ori="0", eche10="15.2")
+    r = audit_facturation(conn, REGLES)
+    assert "extras_en_reprise_du_solde" not in r["anomalies"]
+    assert "nombre_echeances_prelevement" not in r["anomalies"]
+    assert r["resume"]["cycle_extras"]["familles_en_reprise_du_solde"] == 0
+
+
+def test_regularisation_n_est_pas_un_cycle_extras(conn):
+    # une ligne qui n'est pas un extra (CANT4JREGUL) : controle habituel du nombre d'echeances
+    _preparation_extras(conn, solde_pris="1", ori="900", eche10="915.2")
+    conn.execute("INSERT INTO FAC_GESTION_LIGNE VALUES ('2', '10', 'CANT4JREGUL', '400', '0', '0', '', '')")
+    r = audit_facturation(conn, REGLES)
+    assert "cycle_extras" not in r["resume"] and "extras_en_reprise_du_solde" not in r["anomalies"]
+    assert r["anomalies"]["nombre_echeances_prelevement"][0]["echeances"] == 1
