@@ -331,3 +331,21 @@ def test_remise_personnel_toujours_due_ou_deja_reprise(conn):
                  "'Regularisation remise personnel', '0', '0', '0')")
     r = regularisations_a_preparer(conn, regles, date_effet="2026-10-20", aujourd_hui=AUJ)
     assert r["remise_personnel_retiree"] == []
+
+
+def test_extras_jamais_regularises(conn):
+    # constat du 24/10/2026 : un occasionnel facture (GMOCC commence comme le forfait matin GM) etait
+    # propose en avoir ; un extra n'est ni regularise ni repris dans l'avoir d'un depart
+    conn.execute("INSERT INTO FAC_HISTO_LIGNE VALUES ('2', '1', '10', 'GMOCC', '11', '2', '5.5', "
+                 "'Garderie occasionnelle septembre', '0', '0', '0')")
+    conn.execute("INSERT INTO FAC_HISTO_LIGNE VALUES ('2', '3', '30', 'GMOCC', '5.5', '1', '5.5', "
+                 "'Garderie occasionnelle septembre', '0', '0', '0')")
+    r = regularisations_a_preparer(conn, REGLES, aujourd_hui=AUJ)
+    a = next(x for x in r["regularisations"] if x["id_eleve"] == 1)
+    assert "GMOCC" in {l["code"] for l in a["lignes"]}  # sans liste d'extras : pris pour un forfait
+    regles = {**REGLES, "facturation_extras": {"lignes": ["GMOCC"]}}
+    r = regularisations_a_preparer(conn, regles, aujourd_hui=AUJ)
+    a = next(x for x in r["regularisations"] if x["id_eleve"] == 1)
+    assert "GMOCC" not in {l["code"] for l in a["lignes"]} and "CANT3J" in {l["code"] for l in a["lignes"]}
+    d = next(x for x in r["departs"] if x["id_eleve"] == 3)
+    assert "GMOCC" not in {l["code"] for l in d["lignes"]}

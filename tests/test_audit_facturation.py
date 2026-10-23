@@ -236,3 +236,15 @@ def test_regularisation_n_est_pas_un_cycle_extras(conn):
     r = audit_facturation(conn, REGLES)
     assert "cycle_extras" not in r["resume"] and "extras_en_reprise_du_solde" not in r["anomalies"]
     assert r["anomalies"]["nombre_echeances_prelevement"][0]["echeances"] == 1
+
+
+def test_extra_dont_le_code_commence_comme_un_forfait(conn):
+    # constat du 24/10/2026 : GARDMATINOCC (garderie occasionnelle) commence par GARDM (forfait matin) ;
+    # sans liste d'extras, l'occasionnel d'Alice (pas d'activite MATIN) est pris pour un forfait en trop
+    conn.execute("INSERT INTO FAC_GESTION_LIGNE VALUES ('1', '10', 'GMOCC', '11', '0', '0', '', '')")
+    a = audit_facturation(conn, REGLES)["anomalies"]
+    assert ("GMOCC", 11.0, 0) in {(x["ligne"], x["facture"], x["attendu"]) for x in a["ligne_incorrecte"]}
+    a = audit_facturation(conn, dict(REGLES, facturation_extras={"lignes": ["GMOCC"]}))["anomalies"]
+    assert not any(x["ligne"] == "GMOCC" for x in a["ligne_incorrecte"])
+    # le controle du vrai forfait reste en place (Bob : FMS juste, CANT3J faux)
+    assert any(x["ligne"] == "CANT3J" for x in a["ligne_incorrecte"])

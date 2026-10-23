@@ -123,7 +123,7 @@ def audit_facturation(conn, regles: dict, validee: bool = False) -> dict:
         att, anomalies = ctx.attendu_eleve(i)
         for a in anomalies:
             alerte(a, eleve=nm(i))
-        for code in set(att) | {c for c in g if any(c.startswith(k) for k in controles)}:
+        for code in set(att) | {c for c in g if ctx.est_controle(c, controles)}:
             f, a = g.get(code, 0), att.get(code, 0)
             if abs(f - a) > .01:
                 k = _prorata(f, a, nb_mois)
@@ -203,7 +203,7 @@ def audit_facturation(conn, regles: dict, validee: bool = False) -> dict:
     # extras, 287 995,68 EUR au 27/10). Controle : preparation (ou derniere validation) dont toutes les
     # lignes non nulles sont des lignes d'extras, et solde repris sur les factures.
     x_r = regles.get("facturation_extras", {})
-    codes_extras = set(x_r.get("lignes", ["CANTOCC", "GARDMATINOCC", "GARDETUDOCC", "RETARDGARDETUD", "FRSIMP"]))
+    codes_extras = ctx.lignes_extras()
     if complementaire:
         v_cible = v_prep
     elif validee:

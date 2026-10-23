@@ -16,6 +16,9 @@ from collections import defaultdict
 from datetime import date
 from pathlib import Path
 
+# Lignes des extras du mois si les regles ne les donnent pas (facturation_extras.lignes)
+LIGNES_EXTRAS_DEFAUT = ("CANTOCC", "GARDMATINOCC", "GARDETUDOCC", "RETARDGARDETUD", "FRSIMP")
+
 
 def charger_regles(chemin: str | None = None) -> dict:
     p = chemin or os.environ.get("CHARLEMAGNE_REGLES_FACTURATION")
@@ -198,6 +201,17 @@ class Contexte:
         c |= {x["ligne"] for x in R.get("informations_complementaires", [])}
         c.discard("")
         return c
+
+    def lignes_extras(self) -> set[str]:
+        """Lignes des extras du mois (occasionnels factures par Passage, retards, frais) :
+        regles facturation_extras.lignes."""
+        return set(self.regles.get("facturation_extras", {}).get("lignes", LIGNES_EXTRAS_DEFAUT))
+
+    def est_controle(self, code: str, prefixes: set[str]) -> bool:
+        """Ligne que le moteur sait calculer. Les lignes d'extras ne le sont jamais, meme si
+        leur code commence comme une ligne de forfait (GARDMATINOCC commence par GARDM) :
+        sinon un occasionnel facture serait pris pour un forfait en trop (constate le 24/10/2026)."""
+        return code not in self.lignes_extras() and any(code.startswith(k) for k in prefixes)
 
     def attendu_eleve(self, i: int) -> tuple[dict, list]:
         """Lignes attendues (code -> tarif annuel) pour un eleve, et anomalies de

@@ -226,6 +226,7 @@ def regularisations_a_preparer(conn, regles: dict, date_effet: str | None = None
         attente[(a["id_eleve"], a["code_base"])] += a["montant"]
     factures = {l["eleve"] for l in lignes if l["eleve"]}
     controles = ctx.prefixes_controles()
+    extras = ctx.lignes_extras()
     fr_r = regles.get("fratrie")
     if fr_r:
         controles.add(fr_r["prefixe_lignes"])
@@ -265,7 +266,7 @@ def regularisations_a_preparer(conn, regles: dict, date_effet: str | None = None
                 continue
             lignes_d = []
             for (e, code), entrees in cov.items():
-                if e != i:
+                if e != i or code in extras:  # un extra est une consommation passee : jamais d'avoir de depart
                     continue
                 couvert = _couvert_depuis(entrees, ms + 1, nb)
                 if abs(couvert) > .02:
@@ -292,7 +293,9 @@ def regularisations_a_preparer(conn, regles: dict, date_effet: str | None = None
             m_eff = max(m0, me) if me else m0
             for code, v in contrib_classe.get(ctx.classe(i), {}).items():
                 att[code] = v
-        codes = set(att) | {c for (e, c) in cov if e == i and (any(c.startswith(k) for k in controles) or nouveau)}
+        # les extras du mois (occasionnels Passage, retards, frais) ne se regularisent jamais ici
+        codes = set(att) | {c for (e, c) in cov if e == i and c not in extras
+                            and (ctx.est_controle(c, controles) or nouveau)}
         lignes_r = []
         for code in sorted(codes):
             tarif = float(att.get(code, 0))
