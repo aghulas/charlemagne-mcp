@@ -227,6 +227,18 @@ def test_suivi_echeanciers(conn):
         suivi_echeanciers(conn, REGLES, id_responsable="99", aujourd_hui=AUJ)
 
 
+def test_suivi_echeanciers_echeance_unique_reetalee(conn):
+    # validation 3 pour RD : solde 930 + complement 20 sur une seule echeance au 27/10 -> 9 echeances
+    conn.execute("INSERT INTO FAC_HISTO_FAMILLE (IDVALIDATION, IDRESPONSABLE, HF_DATE_FACTURE, HF_NUMERO_FACTURE, "
+                 "HF_APAYER_FACTURE, HF_ORI_SOLDE, HF_MODE_REGLEMENT, HF_ECHE_DATE1, HF_ECHE_PRIX1) "
+                 "VALUES ('3', '40', '20261016', '5', '20', '930', 'Prélèvement', '20261027', '950')")
+    r = suivi_echeanciers(conn, REGLES, id_responsable="40", aujourd_hui=AUJ)
+    rd = r["familles"][0]
+    assert rd["echeancier_reetale"] is True and r["resume"]["echeanciers_reetales"] == 1
+    assert len(rd["echeances_a_venir"]) == 9 and rd["reste_a_prelever"] == 950
+    assert "echeancier_incoherent" not in r["nb_alertes"]
+
+
 def test_suivi_echeanciers_avec_comptabilite(conn):
     sans = suivi_echeanciers(conn, REGLES, aujourd_hui=AUJ)
     assert all("comptabilite" not in f for f in sans["familles"]) and "statut paye/impaye" in sans["note"]

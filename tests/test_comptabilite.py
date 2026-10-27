@@ -289,3 +289,24 @@ def test_synthese_familles_facturees(conn):
     s = C.synthese_familles_facturees(conn)
     assert set(s["comptes"]) == {"1", "2"}
     assert set(C.synthese_familles_facturees(conn, "2")["comptes"]) == {"2"}
+
+
+def test_echeance_unique_reetalee_comme_en_comptabilite(conn):
+    # facture du 16/10 pour A : solde restant 200 + complement 10 portes par une seule echeance au 27/10 ;
+    # la comptabilite les preleve en deux fois (27/10 et 27/11) : 105 + 105
+    conn.execute("INSERT INTO FAC_HISTO_FAMILLE (IDVALIDATION, IDRESPONSABLE, HF_MODE_REGLEMENT, HF_DATE_FACTURE, "
+                 "HF_ECHE_DATE1, HF_ECHE_PRIX1) VALUES ('2', '1', 'Prélèvement', '20261016', '20261027', '210')")
+    r = C.controle_prelevements(conn, date_echeance="2026-10-27")
+    assert r["attendu"]["montant"] == 105.0 and r["echeanciers_reetales"] == 1
+    assert r["prochaine_echeance"]["montant"] == 105.0
+    f = C.encaissements_famille(conn, id_responsable="1", date_reference="2026-11-10")["familles"][0]
+    assert [e["date"] for e in f["echeances"]] == ["2026-10-27", "2026-11-27"]
+    assert f["reste_a_venir"] == 105.0
+
+
+def test_echeance_echue_des_que_la_remise_est_comptabilisee(conn):
+    # remise du 29/09 comptabilisee le 01/10 : au 02/10 (moins de 5 jours), l'echeance est deja echue et couverte ;
+    # avant la correction, A paraissait en avance de 110
+    f = C.encaissements_famille(conn, id_responsable="1", date_reference="2026-10-02")["familles"][0]
+    assert f["retard"] == 0.0 and f["en_avance"] == 0.0
+    assert f["echeances"][0] == {"date": "2026-09-29", "montant": 110.0, "statut": "couverte"}

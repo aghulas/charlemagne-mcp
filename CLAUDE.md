@@ -438,6 +438,20 @@ du debut de l'exercice ouvert a la date du jour), depose dans le dossier d'echan
   bloc `comptabilite` par famille detaillee et alerte `retard_de_paiement` (retard > `seuil_retard` = 1 EUR), ce qui
   fait apparaitre la famille dans `familles`. Sans FEC, comportement et note inchanges. Verifie le 08/10/2026 :
   22 familles en retard (57 990 EUR) = `impayes_et_retards` moins l'ancien compte sans facture de l'annee (253 EUR).
+- **Echeancier effectif** (`tools/echeancier.py`, 27/10/2026) : une facture validee en cours d'annee peut porter
+  dans `FAC_HISTO_FAMILLE` une **echeance unique** (solde restant + complement a la prochaine date ; 86 familles,
+  validations 4 a 7 d'octobre 2026) alors que la comptabilite preleve ce montant reetale sur les echeances
+  restantes (reajustement Charlemagne : montant / nombre d'echeances restantes, dates conservees, arrondi a l'euro
+  le plus proche, derniere echeance d'ajustement ; 3 642,70 / 9 -> 405, preleve 405). Regle : facture en
+  Prelevement a une seule date, echeancier effectif precedent ayant au moins deux dates a partir de celle-ci ->
+  `reetaler`. Utilise par `_echeanciers` (retards, fiche et suivi), `_factures` (`controle_prelevements`,
+  champ `echeanciers_reetales`) et `suivi_echeanciers` (`echeancier_reetale`, `resume.echeanciers_reetales`).
+  `fiche_famille` montre toujours l'echeancier tel que la facture le porte. Sans cette regle, l'attendu de la
+  remise du 27/10 etait de 342 011 EUR (preleve 86 035) et 80 familles paraissaient en retard au 02/11 (276 kEUR).
+- `controle_prelevements(tolerance=1.0)` : ecarts d'au plus 1 EUR comptes a part (`ecarts_d_arrondi`, 35 familles
+  le 27/10, arrondis du reajustement). `situation` : une echeance est echue `delai_jours` apres sa date **ou des
+  que la remise qui la preleve est comptabilisee** (remise du 27/10 passee le jour meme : 258 familles
+  paraissaient en avance).
 - **Garde-fou de periode** : l'ecran DGI/FEC propose la fin de l'exercice ; un FEC qui ferait perdre plus de
   10 ecritures deja chargees (`SEUIL_RECUL`) est refuse (`--accepter-recul` pour forcer). On compte les ecritures
   perdues et non la date de la derniere ecriture : supprimer une ecriture recente fait reculer cette date (constate

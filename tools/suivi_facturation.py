@@ -36,6 +36,7 @@ import sqlite3
 from collections import Counter, defaultdict
 from datetime import date
 
+from tools.echeancier import echeanciers_effectifs
 from tools.regles_facturation import (
     Contexte,
     code_de_base,
@@ -511,14 +512,17 @@ def suivi_echeanciers(conn, regles: dict, id_responsable: str | None = None, auj
     A = defaultdict(list)
     familles = []
     reste_total = 0.0
+    nb_reetales = 0
     for rid, fs in sorted(par_resp.items()):
         d = fs[-1]
         factures = [{"validation": int(f["IDVALIDATION"]), "type": validations.get(int(f["IDVALIDATION"]), {}).get("type"),
                      "numero": f.get("HF_NUMERO_FACTURE"), "date": f.get("HF_DATE_FACTURE"),
                      "montant": num(f.get("HF_APAYER_FACTURE")), "solde_origine": num(f.get("HF_ORI_SOLDE"))} for f in fs]
         total = round(sum(x["montant"] for x in factures), 2)
-        ech = [(d.get(f"HF_ECHE_DATE{k}"), num(d.get(f"HF_ECHE_PRIX{k}"))) for k in range(1, 13)]
-        ech = sorted((x for x in ech if x[1] and x[0]), key=lambda x: x[0])
+        eff = echeanciers_effectifs(fs)[-1]    # echeance unique reetalee comme en comptabilite
+        ech = eff["echeances"]
+        if eff["reetale"]:
+            nb_reetales += 1
         a_venir = [{"date": x[0], "montant": round(x[1], 2)} for x in ech if x[0] >= auj]
         passees = [{"date": x[0], "montant": round(x[1], 2)} for x in ech if x[0] < auj]
         somme = round(sum(x[1] for x in ech), 2)
@@ -556,6 +560,8 @@ def suivi_echeanciers(conn, regles: dict, id_responsable: str | None = None, auj
         fam = {"id_responsable": rid, "responsable": ctx.rn.get(rid, str(rid)), "mode_reglement": mode_actuel,
                "factures": factures, "total_facture": total, "echeances_passees": passees, "echeances_a_venir": a_venir,
                "reste_a_prelever": round(sum(x["montant"] for x in a_venir), 2), "alertes": alertes}
+        if eff["reetale"]:
+            fam["echeancier_reetale"] = True
         if comptes is not None:
             fam["comptabilite"] = compta
         reste_total += fam["reste_a_prelever"]
@@ -571,10 +577,13 @@ def suivi_echeanciers(conn, regles: dict, id_responsable: str | None = None, auj
         "date": auj, "validations": [validations[k] for k in sorted(validations)],
         "resume": {"familles": len(par_resp), "familles_avec_plusieurs_factures": sum(1 for fs in par_resp.values() if len(fs) > 1),
                    "total_facture": round(sum(num(f.get("HF_APAYER_FACTURE")) for fs in par_resp.values() for f in fs), 2),
-                   "reste_a_prelever": round(reste_total, 2)},
+                   "reste_a_prelever": round(reste_total, 2),
+                   "echeanciers_reetales": nb_reetales},
         "nb_alertes": {k: len(v) for k, v in A.items()},
         "alertes": {k: v[:MAX_ELEMENTS] for k, v in A.items()},
         "familles": familles[:MAX_ELEMENTS],
         "note": note + ("'familles' ne liste que les familles avec une alerte ou plusieurs factures, sauf si "
-                       "id_responsable est donne."),
+                       "id_responsable est donne. Une facture en cours d'annee a echeance unique (solde + complement) "
+                       "est reetalee sur les echeances restantes, comme le fait la comptabilite "
+                       "(echeancier_reetale ; la facture remise a la famille garde l'echeance unique)."),
     }

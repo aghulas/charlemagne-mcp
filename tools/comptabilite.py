@@ -35,6 +35,8 @@ import sqlite3
 from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta
 
+from tools.echeancier import echeanciers_effectifs
+
 MAX_ELEMENTS = 80
 MAX_MOUVEMENTS = 200
 
@@ -120,15 +122,15 @@ def _echeanciers(conn) -> dict[int, dict]:
         return {}
     if not cols:
         return {}
-    res: dict[int, dict] = {}
+    par_resp: dict[int, list[dict]] = defaultdict(list)
     for row in conn.execute("SELECT * FROM FAC_HISTO_FAMILLE ORDER BY CAST(IDVALIDATION AS INTEGER)"):
         f = dict(zip(cols, row))
-        ech = sorted(((f.get(f"HF_ECHE_DATE{k}"), _num(f.get(f"HF_ECHE_PRIX{k}"))) for k in range(1, 13)),
-                     key=lambda x: x[0] or "")
-        ech = [(d_, m) for d_, m in ech if d_ and m]
-        res[int(f["IDRESPONSABLE"])] = {"mode_reglement": f.get("HF_MODE_REGLEMENT"),
-                                        "date_facture": f.get("HF_DATE_FACTURE"),
-                                        "echeances": ech}
+        par_resp[int(f["IDRESPONSABLE"])].append(f)
+    res: dict[int, dict] = {}
+    for rid, fs in par_resp.items():
+        eff = echeanciers_effectifs(fs)[-1]   # echeance unique reetalee comme en comptabilite (tools/echeancier.py)
+        res[rid] = {"mode_reglement": fs[-1].get("HF_MODE_REGLEMENT"), "date_facture": fs[-1].get("HF_DATE_FACTURE"),
+                    "echeances": eff["echeances"], "reetale": eff["reetale"]}
     return res
 
 
@@ -220,8 +222,13 @@ def situation(mouvements: list[dict], echeancier: dict | None, date_ref: str, de
     solde = round(sum(e["debit"] - e["credit"] for e in mvts), 2)
     limite = (_d(date_ref) - timedelta(days=delai_jours)).strftime("%Y%m%d")
     ech = (echeancier or {}).get("echeances", [])
-    echues = [(d_, m) for d_, m in ech if d_ <= limite]
-    a_venir = [(d_, m) for d_, m in ech if d_ > limite]
+    # une echeance est echue delai_jours apres sa date, ou des que la remise qui la preleve est comptabilisee
+    # (remise du 27/10/2026 comptabilisee le jour meme : sans cela, toutes les familles paraissaient en avance)
+    remises = [e["date_ecriture"] for e in mvts
+               if e["nature"] == "reglement" and _mode(e["libelle"], e["piece_ref"]) == "prelevement"]
+    echue = lambda d_: d_ <= limite or (d_ <= date_ref and any(r >= d_ for r in remises))  # noqa: E731
+    echues = [(d_, m) for d_, m in ech if echue(d_)]
+    a_venir = [(d_, m) for d_, m in ech if not echue(d_)]
     reste_a_venir = round(sum(m for _, m in a_venir), 2)
     retard = round(solde - reste_a_venir, 2) if echeancier else solde
     # echeances non couvertes : les plus recentes d'abord (un reglement solde les plus anciennes)
@@ -415,13 +422,25 @@ def _factures(conn) -> dict[int, list[dict]]:
         cols = [r[1] for r in conn.execute("PRAGMA table_info(FAC_HISTO_FAMILLE)")]
     except sqlite3.OperationalError:
         return {}
-    res = defaultdict(list)
+    par_resp: dict[int, list[dict]] = defaultdict(list)
     for row in conn.execute("SELECT * FROM FAC_HISTO_FAMILLE ORDER BY CAST(IDVALIDATION AS INTEGER)"):
         f = dict(zip(cols, row))
-        ech = [(f.get(f"HF_ECHE_DATE{k}"), _num(f.get(f"HF_ECHE_PRIX{k}"))) for k in range(1, 13)]
-        res[int(f["IDRESPONSABLE"])].append({"date": f.get("HF_DATE_FACTURE") or "", "mode": f.get("HF_MODE_REGLEMENT"),
-                                             "echeances": [(d_, m) for d_, m in ech if d_ and m]})
+        par_resp[int(f["IDRESPONSABLE"])].append(f)
+    res = defaultdict(list)
+    for rid, fs in par_resp.items():
+        for f, eff in zip(fs, echeanciers_effectifs(fs)):
+            res[rid].append({"date": f.get("HF_DATE_FACTURE") or "", "mode": f.get("HF_MODE_REGLEMENT"),
+                             "echeances": eff["echeances"], "reetale": eff["reetale"]})
     return res
+
+
+def _reetales(factures: dict, date_ech: str) -> int:
+    """Nombre de familles dont l'echeancier en vigueur a date_ech est une echeance unique reetalee."""
+    n = 0
+    for fs in factures.values():
+        en_vigueur = [f for f in fs if f["date"] <= date_ech]
+        n += bool(en_vigueur and en_vigueur[-1].get("reetale"))
+    return n
 
 
 def _attendus(factures: dict, date_ech: str, mode_prel: str) -> dict[int, float]:
@@ -438,7 +457,7 @@ def _attendus(factures: dict, date_ech: str, mode_prel: str) -> dict[int, float]
 
 
 def controle_prelevements(conn, date_echeance: str | None = None, fenetre_jours: int = 15,
-                          mode_prelevement: str = "Prélèvement") -> dict:
+                          mode_prelevement: str = "Prélèvement", tolerance: float = 1.0) -> dict:
     """Compare une echeance de prelevement aux prelevements comptabilises et aux rejets qui ont suivi."""
     m = meta(conn)
     factures = _factures(conn)
@@ -481,9 +500,11 @@ def controle_prelevements(conn, date_echeance: str | None = None, fenetre_jours:
     attendus_c = {par_id[r]: v for r, v in att.items() if r in par_id}
     manquants = [{"compte": c, "responsable": nom(c), "id_responsable": rid_de.get(c), "attendu": v}
                  for c, v in sorted(attendus_c.items()) if c not in preleve]
-    ecarts = [{"compte": c, "responsable": nom(c), "id_responsable": rid_de.get(c), "attendu": v,
-               "preleve": round(preleve[c], 2), "ecart": round(preleve[c] - v, 2)}
-              for c, v in sorted(attendus_c.items()) if c in preleve and abs(preleve[c] - v) > 0.01]
+    tous_ecarts = [{"compte": c, "responsable": nom(c), "id_responsable": rid_de.get(c), "attendu": v,
+                    "preleve": round(preleve[c], 2), "ecart": round(preleve[c] - v, 2)}
+                   for c, v in sorted(attendus_c.items()) if c in preleve and abs(preleve[c] - v) > 0.01]
+    ecarts = [e for e in tous_ecarts if abs(e["ecart"]) > tolerance + 0.005]
+    arrondis = [e for e in tous_ecarts if abs(e["ecart"]) <= tolerance + 0.005]
     sans = [{"compte": c, "responsable": nom(c), "id_responsable": rid_de.get(c), "preleve": round(v, 2)}
             for c, v in sorted(preleve.items()) if c not in attendus_c]
     rej = [{"compte": c, "responsable": nom(c), "id_responsable": rid_de.get(c),
@@ -509,6 +530,9 @@ def controle_prelevements(conn, date_echeance: str | None = None, fenetre_jours:
         "encaisse_net": round(sum(preleve.values()) - total_rej, 2),
         "manquants": manquants[:MAX_ELEMENTS],
         "ecarts_de_montant": ecarts[:MAX_ELEMENTS],
+        "ecarts_d_arrondi": {"familles": len(arrondis), "montant_net": round(sum(e["ecart"] for e in arrondis), 2),
+                             "tolerance": tolerance},
+        "echeanciers_reetales": _reetales(factures, d_ech),
         "preleves_sans_echeance_attendue": sans[:MAX_ELEMENTS],
         "rejets": rej[:MAX_ELEMENTS],
         "prochaine_echeance": prochaine,
@@ -517,7 +541,9 @@ def controle_prelevements(conn, date_echeance: str | None = None, fenetre_jours:
                  f"{mode_prelevement} sur la facture. Preleve : reglements « prelevement » sur les comptes 411 "
                  f"comptabilises du {_iso(d_ech)} au {_iso(fin)} (FEC charge le {m['charge_le']}, ecritures jusqu'au "
                  f"{_iso(m['periode_fin'])}). Rejets : impayes saisis entre cette echeance et la suivante. Le fichier de remise SEPA "
-                 "lui-meme n'est pas lu."),
+                 "lui-meme n'est pas lu. Ecarts d'au plus {tolerance:.0f} EUR comptes a part (arrondis du reajustement). "
+                 "Une facture en cours d'annee a echeance unique (solde + complement) est reetalee sur les echeances "
+                 "restantes, comme le fait la comptabilite (echeanciers_reetales = familles concernees)."),
     }
 
 
