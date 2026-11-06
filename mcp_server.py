@@ -27,6 +27,7 @@ from tools import (
     calendrier,
     comparaison,
     comptabilite,
+    comptabilite_exercices,
     eleves,
     facturation,
     famille,
@@ -722,6 +723,64 @@ def register_tools(server: MCPServer) -> None:
         try:
             return comptabilite.pont_facturation_comptabilite(conn, validation=validation)
         except ValueError as exc:
+            return {"error": str(exc)}
+        finally:
+            conn.close()
+
+    @server.tool(
+        description=(
+            "Ecritures comptables d'un ou plusieurs comptes (numero ou debut de numero : '6064100', '606', "
+            "'6065') sur un ou plusieurs exercices (format AAAA-AAAA, du 01/09 au 31/08 ; defaut : tous ceux "
+            "charges, le FEC courant et les exercices clos deposes dans le dossier d'echange). grouper_par : "
+            "'compte' (totaux par compte), 'mois', 'libelle' (totaux par libelle normalise, p. ex. par "
+            "fournisseur : AMAZON, MICROSOFT...) ou 'ecriture' (une ligne par ecriture, limite lignes au plus). "
+            "Filtres : recherche (texte du libelle), journal (ACH, OD, 70, 56...). A-nouveaux exclus par defaut "
+            "(inclure_a_nouveaux) ; exclure_journaux pour ecarter d'eventuelles ecritures de cloture. Personnel "
+            "et organismes sociaux (42, 43, 64) et comptes familles (411) : totaux par compte ou par mois "
+            "seulement, jamais de detail. Les libelles viennent du FEC et peuvent citer des noms : ne pas "
+            "les diffuser tels quels. Montants au sens naturel (produits : credit - debit ; charges : debit - credit)."
+        )
+    )
+    def ecritures_par_compte(comptes: str, exercices: str | None = None, grouper_par: str = "compte",
+                             recherche: str | None = None, journal: str | None = None,
+                             inclure_a_nouveaux: bool = False, exclure_journaux: str | None = None,
+                             limite: int = 300) -> dict:
+        """Detail ou totaux des ecritures d'un compte, par exercice."""
+        try:
+            conn = get_compta_connection()
+        except FileNotFoundError as exc:
+            return {"error": str(exc)}
+        try:
+            return comptabilite_exercices.ecritures_par_compte(
+                conn, comptes, exercices=exercices, grouper_par=grouper_par, recherche=recherche, journal=journal,
+                inclure_a_nouveaux=inclure_a_nouveaux, exclure_journaux=exclure_journaux, limite=limite)
+        except (ValueError, sqlite3.OperationalError) as exc:
+            return {"error": str(exc)}
+        finally:
+            conn.close()
+
+    @server.tool(
+        description=(
+            "Compare des comptes d'un exercice a l'autre (au moins deux exercices charges, format AAAA-AAAA) : "
+            "par='compte' (un compte par ligne, montants par exercice, ecart et ecart en % entre les deux "
+            "derniers) ou par='mois' (rang du mois dans l'exercice, septembre = 1 ; sert a trouver le mois ou "
+            "une hausse commence). comptes : numeros ou debuts de numero ('641', '606,6135'). Exercice partiel "
+            "(en cours) signale : ne pas le comparer a un exercice complet. Personnel et familles : totaux "
+            "seulement. A-nouveaux exclus par defaut."
+        )
+    )
+    def comparer_exercices_compta(comptes: str, exercices: str | None = None, par: str = "compte",
+                                  inclure_a_nouveaux: bool = False, exclure_journaux: str | None = None) -> dict:
+        """Evolution de comptes entre exercices, par compte ou par mois."""
+        try:
+            conn = get_compta_connection()
+        except FileNotFoundError as exc:
+            return {"error": str(exc)}
+        try:
+            return comptabilite_exercices.comparer_exercices_compta(
+                conn, comptes, exercices=exercices, par=par, inclure_a_nouveaux=inclure_a_nouveaux,
+                exclure_journaux=exclure_journaux)
+        except (ValueError, sqlite3.OperationalError) as exc:
             return {"error": str(exc)}
         finally:
             conn.close()

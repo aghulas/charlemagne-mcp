@@ -23,6 +23,15 @@ Le FEC est une photographie complete de la periode : chaque chargement REMPLACE
 la table (idempotent par construction). La base est construite dans un fichier
 temporaire puis substituee a l'ancienne.
 
+Exercices clos (historique) : un FEC dont les ecritures s'arretent AVANT le debut de
+la periode deja chargee (ex. l'exercice 2024-2025 quand la base commence au
+01/09/2025) est range a part, dans CPT_ECRITURE_CLOS (colonne ``exercice``,
+« 2024-2025 ») avec une ligne par exercice dans CPT_EXPORT_CLOS. Il remplace
+uniquement son propre exercice et ne touche ni a CPT_ECRITURE ni aux outils de
+suivi des familles (impayes, echeanciers), qui ne lisent que la periode courante.
+Inversement, charger un nouveau FEC de la periode courante conserve les exercices
+clos. Un FEC a cheval sur deux exercices ou desequilibre est refuse.
+
 Confidentialite : les ecritures de paie (journal dont le libelle contient « PAIE »,
 comptes 42x, 43x, 64x) sont chargees SANS libelle ni compte auxiliaire : seuls les
 montants restent, pour les agregats. Le FEC ne contient aucune donnee bancaire.
@@ -92,7 +101,59 @@ CREATE TABLE CPT_EXPORT (
     total_credit     REAL,
     nb_lignes_masquees INTEGER
 );
+""" + """
+CREATE TABLE CPT_ECRITURE_CLOS (            -- exercices clos : memes colonnes + exercice
+    exercice        TEXT NOT NULL,         -- « 2024-2025 » (1er septembre -> 31 aout)
+    rang            INTEGER NOT NULL,      -- numero de ligne dans le FEC de cet exercice
+    journal         TEXT NOT NULL,
+    journal_lib     TEXT,
+    num_ecriture    TEXT,
+    date_ecriture   TEXT NOT NULL,         -- AAAAMMJJ
+    compte          TEXT NOT NULL,
+    compte_lib      TEXT,
+    compte_aux      TEXT,
+    compte_aux_lib  TEXT,
+    piece_ref       TEXT,
+    piece_date      TEXT,
+    libelle         TEXT,
+    debit           REAL NOT NULL,
+    credit          REAL NOT NULL,
+    lettrage        TEXT,
+    date_lettrage   TEXT,
+    date_validation TEXT,
+    cle_piece       TEXT,
+    masquee         INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (exercice, rang)
+);
+CREATE INDEX ix_cpt_clos_compte ON CPT_ECRITURE_CLOS (exercice, compte);
+CREATE TABLE CPT_EXPORT_CLOS (
+    exercice         TEXT PRIMARY KEY,
+    fichier          TEXT,
+    sha256           TEXT,
+    charge_le        TEXT,
+    periode_debut    TEXT,
+    periode_fin      TEXT,
+    nb_lignes        INTEGER,
+    total_debit      REAL,
+    total_credit     REAL,
+    nb_lignes_masquees INTEGER
+);
 """
+
+DDL_CLOS = DDL[DDL.index("CREATE TABLE CPT_ECRITURE_CLOS"):]
+
+COLONNES_ECRITURE = ["rang", "journal", "journal_lib", "num_ecriture", "date_ecriture", "compte", "compte_lib",
+                     "compte_aux", "compte_aux_lib", "piece_ref", "piece_date", "libelle", "debit", "credit",
+                     "lettrage", "date_lettrage", "date_validation", "cle_piece", "masquee"]
+COLONNES_EXPORT = ["fichier", "sha256", "charge_le", "periode_debut", "periode_fin", "nb_lignes", "total_debit",
+                   "total_credit", "nb_lignes_masquees"]
+
+
+def exercice_de(aaaammjj: str) -> str:
+    """Exercice comptable (1er septembre -> 31 aout) d'une date AAAAMMJJ : « 2024-2025 »."""
+    annee, mois = int(aaaammjj[:4]), int(aaaammjj[4:6])
+    debut = annee if mois >= 9 else annee - 1
+    return f"{debut}-{debut + 1}"
 
 
 def montant(valeur: str) -> float:
@@ -217,12 +278,97 @@ def ecritures_apres(db: Path, date_fin: str) -> int:
         conn.close()
 
 
+def _reprendre_clos(conn: sqlite3.Connection, ancienne: Path) -> None:
+    """Recopie les exercices clos de la base remplacee dans la base en construction."""
+    if not ancienne.exists():
+        return
+    conn.execute("ATTACH DATABASE ? AS ancienne", (str(ancienne),))
+    try:
+        tables = {t for (t,) in conn.execute("SELECT name FROM ancienne.sqlite_master WHERE type = 'table'")}
+        if "CPT_ECRITURE_CLOS" in tables:
+            cols = ", ".join(["exercice"] + COLONNES_ECRITURE)
+            conn.execute(f"INSERT INTO CPT_ECRITURE_CLOS ({cols}) SELECT {cols} FROM ancienne.CPT_ECRITURE_CLOS")
+        if "CPT_EXPORT_CLOS" in tables:
+            cols = ", ".join(["exercice"] + COLONNES_EXPORT)
+            conn.execute(f"INSERT INTO CPT_EXPORT_CLOS ({cols}) SELECT {cols} FROM ancienne.CPT_EXPORT_CLOS")
+        conn.commit()
+    finally:
+        conn.commit()
+        conn.execute("DETACH DATABASE ancienne")
+
+
+def exercices_clos(db: Path) -> list[dict]:
+    """Exercices clos deja charges (vide si la base n'en a pas ou n'existe pas)."""
+    if not db.exists():
+        return []
+    conn = sqlite3.connect(f"file:{db.resolve().as_posix()}?mode=ro", uri=True)
+    try:
+        cur = conn.execute("SELECT exercice, fichier, periode_debut, periode_fin, nb_lignes, charge_le "
+                           "FROM CPT_EXPORT_CLOS ORDER BY exercice")
+        return [dict(zip(("exercice", "fichier", "periode_debut", "periode_fin", "nb_lignes", "charge_le"), row))
+                for row in cur]
+    except sqlite3.Error:
+        return []
+    finally:
+        conn.close()
+
+
+def charger_clos(fec: Path, db: Path, ecritures: list[dict], r: dict, accepter_recul: bool = False) -> dict:
+    """Range le FEC d'un exercice clos dans CPT_ECRITURE_CLOS, sans toucher a la periode courante."""
+    exercices = sorted({exercice_de(e["date_ecriture"]) for e in ecritures})
+    if len(exercices) != 1:
+        raise ValueError(
+            f"FEC a cheval sur plusieurs exercices ({', '.join(exercices)}) : exporter exercice par exercice "
+            f"(du 01/09 au 31/08).")
+    exercice = exercices[0]
+    tmp = db.with_name(db.name + ".tmp")
+    if tmp.exists():
+        tmp.unlink()
+    src = sqlite3.connect(db)
+    dst = sqlite3.connect(tmp)
+    try:
+        src.backup(dst)                    # copie coherente, puis modification de la copie
+        src.close()
+        dst.executescript(DDL_CLOS.replace("CREATE TABLE", "CREATE TABLE IF NOT EXISTS")
+                          .replace("CREATE INDEX", "CREATE INDEX IF NOT EXISTS"))
+        row = dst.execute("SELECT fichier, periode_debut, periode_fin, nb_lignes FROM CPT_EXPORT_CLOS "
+                          "WHERE exercice = ?", (exercice,)).fetchone()
+        avant = dict(zip(("fichier", "periode_debut", "periode_fin", "nb_lignes"), row)) if row else None
+        if avant and not accepter_recul and r["nb_lignes"] < avant["nb_lignes"] - SEUIL_RECUL:
+            raise ValueError(
+                f"FEC de l'exercice {exercice} plus court que celui deja charge ({r['nb_lignes']} lignes contre "
+                f"{avant['nb_lignes']}) : export incomplet ? Relancer avec --accepter-recul pour le remplacer.")
+        dst.execute("DELETE FROM CPT_ECRITURE_CLOS WHERE exercice = ?", (exercice,))
+        dst.execute("DELETE FROM CPT_EXPORT_CLOS WHERE exercice = ?", (exercice,))
+        cols = ", ".join(["exercice"] + COLONNES_ECRITURE)
+        dst.executemany(
+            f"INSERT INTO CPT_ECRITURE_CLOS ({cols}) VALUES ({', '.join('?' * (len(COLONNES_ECRITURE) + 1))})",
+            [(exercice, *(e[c] for c in COLONNES_ECRITURE)) for e in ecritures])
+        dst.execute(
+            "INSERT INTO CPT_EXPORT_CLOS (exercice, " + ", ".join(COLONNES_EXPORT) + ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (exercice, fec.name, hashlib.sha256(fec.read_bytes()).hexdigest(),
+             datetime.now().strftime("%Y-%m-%d %H:%M:%S"), r["periode_debut"], r["periode_fin"], r["nb_lignes"],
+             r["total_debit"], r["total_credit"], r["nb_lignes_masquees"]))
+        dst.commit()
+    except Exception:
+        dst.close()
+        tmp.unlink(missing_ok=True)
+        raise
+    dst.close()
+    os.replace(tmp, db)
+    r.update(exercice=exercice, clos=True, avant=avant)
+    return r
+
+
 def charger(fec: Path, db: Path, accepter_recul: bool = False) -> dict:
     ecritures = lire_fec(fec)
     r = resume(ecritures)
     if abs(r["total_debit"] - r["total_credit"]) > 0.01:
         raise ValueError(f"FEC desequilibre : debit {r['total_debit']} / credit {r['total_credit']}")
     avant = precedent(db)
+    if avant and avant["periode_debut"] and r["periode_fin"] and r["periode_fin"] < avant["periode_debut"]:
+        # exercice entierement anterieur a la periode chargee : historique, range a part
+        return charger_clos(fec, db, ecritures, r, accepter_recul=accepter_recul)
     if avant and not accepter_recul and r["periode_fin"]:
         # Le FEC ne contient pas la periode demandee, seulement les ecritures : la derniere peut
         # reculer legitimement (ecriture recente supprimee). Un export borne trop tot (l'ecran
@@ -241,6 +387,7 @@ def charger(fec: Path, db: Path, accepter_recul: bool = False) -> dict:
     conn = sqlite3.connect(tmp)
     try:
         conn.executescript(DDL)
+        _reprendre_clos(conn, db)          # les exercices clos survivent au rechargement de la periode courante
         cols = list(ecritures[0].keys()) if ecritures else []
         if ecritures:
             conn.executemany(
@@ -276,7 +423,10 @@ def main() -> int:
     except (OSError, ValueError) as exc:
         print(f"ERREUR : {exc}", file=sys.stderr)
         return 1
-    print(f"FEC charge : {fec.name} -> {db}")
+    if r.get("clos"):
+        print(f"FEC d'exercice clos charge : {fec.name} -> {db} (exercice {r['exercice']})")
+    else:
+        print(f"FEC charge : {fec.name} -> {db}")
     print(f"  periode {r['periode_debut']} -> {r['periode_fin']}, {r['nb_lignes']} lignes, "
           f"debit = credit = {r['total_debit']:.2f}, {r['nb_lignes_masquees']} lignes de paie sans detail")
     for code, j in sorted(r["par_journal"].items()):
@@ -285,6 +435,9 @@ def main() -> int:
     if a:
         print(f"  chargement precedent : {a['fichier']}, {a['periode_debut']} -> {a['periode_fin']}, "
               f"{a['nb_lignes']} lignes ({r['nb_lignes'] - a['nb_lignes']:+d})")
+    clos = exercices_clos(db)
+    if clos:
+        print("  exercices clos en base : " + ", ".join(f"{c['exercice']} ({c['nb_lignes']} lignes)" for c in clos))
     return 0
 
 
